@@ -10,8 +10,8 @@ import time
 import numpy as np
 import tensorflow as tf
 
-import build_inception_v3
-from inputs import construct_network_input_nodes, WHOLE_IMAGE_INPUT
+import v3
+from inception.inputs.construct import construct_network_input_nodes
 
 def check_for_new_training_model(training_checkpoint_dir, eval_checkpoint_dir):
   """
@@ -45,10 +45,6 @@ def check_for_new_training_model(training_checkpoint_dir, eval_checkpoint_dir):
 
 def prep(tfrecords, checkpoint_dir, save_dir, cfg):
 
-  build_inception_v3.CONV_KERNEL_STDDEV = cfg.CONV_KERNEL_STDDEV
-  build_inception_v3.CONV_KERNEL_WD = cfg.CONV_KERNEL_WD
-  build_inception_v3.TRAIN_PHASE = True
-
   graph = tf.get_default_graph()
 
   sess_config = tf.ConfigProto(
@@ -64,17 +60,18 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
   images, labels_sparse, image_paths = construct_network_input_nodes(tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=None,
-    batch_size=cfg.PREP_BATCH_SIZE,
+    batch_size=cfg.BATCH_SIZE,
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = False,
     augment=False,
+    shuffle_batch=True
     cfg=cfg
   )
 
   # Inference Nodes
-  features = build_inception_v3.build(graph, images, cfg.NUM_CLASSES)
+  features = v3.build(graph, images, cfg.NUM_CLASSES)
 
-  logits = build_inception_v3.add_logits(graph, features, cfg.NUM_CLASSES)
+  logits = v3.add_logits(graph, features, cfg.NUM_CLASSES)
 
   top_k_op = tf.nn.in_top_k(logits, labels_sparse, 1)
 
@@ -165,7 +162,7 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
         print print_str % (
           step,
           true_count, cfg.PREP_BATCH_SIZE,
-          dt/cfg.PREP_BATCH_SIZE*1000
+          dt/cfg.BATCH_SIZE*1000
         )
 
         step += 1

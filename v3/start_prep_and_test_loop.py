@@ -20,11 +20,11 @@ def parse_args():
                         help='paths to testing tfrecords files', type=str,
                         nargs='+', required=True)
 
-    parser.add_argument('-d', '--training_checkpoint_dir', dest='training_checkpoint_dir',
+    parser.add_argument('--training_checkpoint_dir', dest='training_checkpoint_dir',
                           help='path to directory where the training checkpoint files are stored', type=str,
                           required=True)
 
-    parser.add_argument('-s', '--eval_checkpoint_dir', dest='eval_checkpoint_dir',
+    parser.add_argument('--preped_checkpoint_dir', dest='preped_checkpoint_dir',
                           help='path to directory for storing the evaluation model', type=str,
                           required=True)
 
@@ -32,9 +32,13 @@ def parse_args():
                           help='path to directory to store evalutation summary files', type=str,
                           required=False, default=None)
 
-    parser.add_argument('-c', '--config', dest='config_file',
+    parser.add_argument('--config', dest='config_file',
                           help='Path to the configuration file',
                           required=True, type=str)
+    
+    parser.add_argument('--cuda_visible_devices', dest='cuda_visible_devices',
+                          help='Specify the visible gpu.',
+                          required=False, type=int, default=1)
 
 
     if len(sys.argv) == 1:
@@ -62,38 +66,31 @@ if __name__ == '__main__':
         training_checkpoint_dir=args.training_checkpoint_dir,
         eval_checkpoint_dir = args.eval_checkpoint_dir):
 
+        print "#####################"
         print "Running eval loop..."
         print "Prepping..."
 
-        prep_cmd = "CUDA_VISIBLE_DEVICES=1 python start_prep.py -t %s -d %s -s %s -c %s"
-        filled_cmd = prep_cmd % (" ".join(args.train_tfrecords), args.training_checkpoint_dir, args.eval_checkpoint_dir, args.config_file)
+        prep_cmd = """CUDA_VISIBLE_DEVICES=%d python start_prep.py \
+        --tfrecords %s \
+        --training_checkpoint_dir %s \
+        --preped_checkpoint_dir %s \
+        --config %s"""
+        filled_cmd = prep_cmd % (args.cuda_visible_devices, " ".join(args.train_tfrecords), args.training_checkpoint_dir, args.preped_checkpoint_dir, args.config_file)
         subprocess.call(filled_cmd, shell=True)
 
-        # cfg.PHASE = "TRAIN"
-        # cfg.DEBUG = False
-        # prep_for_eval.prep(
-        #   tfrecords=args.train_tfrecords,
-        #   checkpoint_dir=args.training_checkpoint_dir,
-        #   save_dir = args.eval_checkpoint_dir,
-        #   cfg=cfg
-        # )
         print "Evaluating..."
 
-        eval_cmd = "CUDA_VISIBLE_DEVICES=1 python start_test.py -t %s -d %s -c %s"
+        eval_cmd = """CUDA_VISIBLE_DEVICES=%d python start_test.py \
+        --tfrecords %s \
+        --checkpoint_dir %s \
+        --config %s"""
         if args.summary_dir:
-            eval_cmd += " --summary_dir %s"
-            filled_cmd = eval_cmd % (" ".join(args.test_tfrecords), args.eval_checkpoint_dir, args.config_file, args.summary_dir)
+          eval_cmd += " --summary_dir %s"
+          filled_cmd = eval_cmd % (args.cuda_visible_devices, " ".join(args.test_tfrecords), args.preped_checkpoint_dir, args.config_file, args.summary_dir)
         else:
-            filled_cmd = eval_cmd % (" ".join(args.test_tfrecords), args.eval_checkpoint_dir, args.config_file)
+          filled_cmd = eval_cmd % (args.cuda_visible_devices, " ".join(args.test_tfrecords), args.preped_checkpoint_dir, args.config_file)
         subprocess.call(filled_cmd, shell=True)
-        # cfg.PHASE = "TEST"
-        #
-        # test.test(
-        #   tfrecords=args.test_tfrecords,
-        #   checkpoint_dir=args.eval_checkpoint_dir,
-        #   cfg=cfg,
-        #   summary_dir = args.summary_dir
-        # )
+        
       else:
         print "No new model, sleeping"
         time.sleep(60*5)

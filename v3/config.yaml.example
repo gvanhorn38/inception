@@ -26,6 +26,7 @@ NUM_INPUT_THREADS : 2
 BATCH_SIZE : 32
 
 NUM_TRAIN_ITERATIONS : 50000
+# The number of batch iterations used to compute the global mean and variance
 NUM_PREP_ITERATIONS : 150
 
 LEARNING_RATE : 0.01
