@@ -1,0 +1,2 @@
+model_checkpoint_path: "original_inception_v3_with_variables"
+all_model_checkpoint_paths: "original_inception_v3_with_variables"
