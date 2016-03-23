@@ -16,7 +16,7 @@ def input_nodes(
   batch_size=32,
   num_threads=2,
   shuffle_batch = True,
-  capacity = 1000,
+  capacity = 128,
   min_after_dequeue = 96,
 
   # And tensorboard summaries of the images
