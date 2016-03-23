@@ -13,6 +13,12 @@ import tensorflow as tf
 import v3
 from inception.inputs.construct import construct_network_input_nodes
 
+# import sys
+# sys.path.append("/home/gvanhorn/code/vision_research/eccv_2016_parts/pose_proc")
+# sys.path.append("/home/gvanhorn/code/vision_research/eccv_2016_parts/tensorflow_experiments/custom_inception_v3")
+# import build_inception_v3
+# import inputs
+
 def check_for_new_training_model(training_checkpoint_dir, eval_checkpoint_dir):
   """
   See if there is a new training model to prep
@@ -51,9 +57,9 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
     log_device_placement=False,
     #device_filters = device_filters,
     allow_soft_placement = True,
-    #gpu_options = tf.GPUOptions(
-    #    per_process_gpu_memory_fraction=1
-    #)
+    gpu_options = tf.GPUOptions(
+        per_process_gpu_memory_fraction=cfg.SESSION_CONFIG.PER_PROCESS_GPU_MEMORY_FRACTION
+    )
   )
 
   # Input Nodes
@@ -64,14 +70,27 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = False,
     augment=False,
-    shuffle_batch=True
+    shuffle_batch=False,
     cfg=cfg
   )
 
   # Inference Nodes
-  features = v3.build(graph, images, cfg.NUM_CLASSES)
-
+  features = v3.build(graph, images, cfg.NUM_CLASSES, cfg)
   logits = v3.add_logits(graph, features, cfg.NUM_CLASSES)
+
+
+  # images, labels_sparse, image_paths = inputs.construct_network_input_nodes(tfrecords,
+  #   input_type=cfg.INPUT_TYPE,
+  #   num_epochs=None,
+  #   batch_size=cfg.BATCH_SIZE,
+  #   num_threads=cfg.NUM_INPUT_THREADS,
+  #   add_summaries = False,
+  #   augment=False,
+  #   cfg=cfg
+  # )
+  #features = build_inception_v3.build(graph, images, cfg.NUM_CLASSES)
+  #logits = build_inception_v3.add_logits(graph, features, cfg.NUM_CLASSES)
+
 
   top_k_op = tf.nn.in_top_k(logits, labels_sparse, 1)
 
@@ -161,7 +180,7 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
 
         print print_str % (
           step,
-          true_count, cfg.PREP_BATCH_SIZE,
+          true_count, cfg.BATCH_SIZE,
           dt/cfg.BATCH_SIZE*1000
         )
 

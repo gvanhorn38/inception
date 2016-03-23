@@ -1,27 +1,27 @@
 import tensorflow as tf
 
-import image_augmentations 
+import image_augmentations
 
 def input_nodes(
   # An array of paths to tfrecords files
-  tfrecords, 
-  
+  tfrecords,
+
   # Data augmentation depends on whether we are in train vs (test / eval) mode
   augment=True,
-  
+
   # number of times to read the tfrecords
-  num_epochs=None, 
-  
+  num_epochs=None,
+
   # Data queue feeding the model
-  batch_size=32, 
+  batch_size=32,
   num_threads=2,
-  shuffle_batch = True, 
-  capacity = 128,
+  shuffle_batch = True,
+  capacity = 1000,
   min_after_dequeue = 96,
-  
+
   # And tensorboard summaries of the images
-  add_summaries=True, 
-  
+  add_summaries=True,
+
   # Global configuration
   cfg=None):
   """
@@ -30,7 +30,7 @@ def input_nodes(
   tfrecords : an array of paths to .tfrecords files containing the Example protobufs
 
   """
-  
+
   with tf.name_scope('inputs'):
 
     # Have a queue that produces the paths to the .tfrecords
@@ -51,7 +51,7 @@ def input_nodes(
         'label' : tf.FixedLenFeature([], tf.int64),
       }
     )
-    
+
     path = features['path']
     image = tf.read_file(path)
     image = tf.image.decode_jpeg(image, channels=3)
@@ -69,10 +69,10 @@ def input_nodes(
         params = [image, tf.constant(cfg.INPUT_SIZE), tf.constant(cfg.INPUT_SIZE)]
         output = tf.py_func(image_augmentations.resize_image_maintain_aspect_ratio, params, [tf.float32], name="resize_maintain_aspect_ratio")
         image = output[0]
-        image.set_shape([cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])  
-        
+        image.set_shape([cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
+
         #image = image_augmentations.resize_image_preserve_aspect_ratio(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
-      
+
       else:
         image = tf.image.resize_images(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
 
@@ -93,7 +93,7 @@ def input_nodes(
         min_after_dequeue= min_after_dequeue, # 3 * batch_size,
         seed = cfg.RANDOM_SEED,
       )
-    
+
     else:
       images, sparse_labels, paths = tf.train.batch(
         [image, label, path],
