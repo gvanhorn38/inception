@@ -8,10 +8,10 @@ import numpy as np
 import tensorflow as tf
 
 import v3
-from inputs.construct import construct_network_input_nodes
+from inception.inputs.construct import construct_network_input_nodes
 
 def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, save_classification_results=False, save_logits=False):
-  
+
   graph = tf.get_default_graph()
 
   sess_config = tf.ConfigProto(
@@ -27,7 +27,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   images, labels_sparse, image_paths = construct_network_input_nodes(tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=1,
-    batch_size=cfg.TEST_BATCH_SIZE,
+    batch_size=cfg.BATCH_SIZE,
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = False,
     augment=False,
@@ -41,7 +41,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   logits = v3.add_logits(graph, features, cfg.NUM_CLASSES)
 
   top_k_op = tf.nn.in_top_k(logits, labels_sparse, 1)
-  
+
   if save_classification_results:
     class_scores, predicted_classes = tf.nn.top_k(logits)
 
@@ -88,13 +88,20 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
     'Current Precision: %.3f',
     'Time/image (ms): %.1f'
   ])
-  
+
   # Save the actually classifications for later processing
   if save_classification_results:
     image_paths_and_predictions = []
-  
+
   if save_logits:
     saved_logits = None
+
+  fetches = [top_k_op]
+  if save_classification_results :
+    fetches += [image_paths, predicted_classes]
+  if save_logits:
+    fetches += [logits]
+
 
   # Restore a checkpoint file
   with tf.Session(config=sess_config) as sess:
@@ -103,7 +110,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
     try:
-      
+
       if specific_model_path == None:
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
@@ -111,7 +118,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
         else:
           print('No checkpoint file found')
           return
-      
+
       # Restores from checkpoint
       saver.restore(sess, specific_model_path)
       # Assuming model_checkpoint_path looks something like:
@@ -126,38 +133,36 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
       while not coord.should_stop():
 
         t = time.time()
-        outputs = sess.run([image_paths, predicted_classes, logits, top_k_op])
+        outputs = sess.run(fetches)
         dt = time.time()-t
 
-        raw_image_paths = outputs[0]
-        class_idxs = outputs[1]
+        if save_classification_results:
+          raw_image_paths = outputs[1]
+          class_idxs = outputs[2]
+          image_paths_and_predictions.extend(zip(raw_image_paths, class_idxs.ravel()))
 
-        image_paths_and_predictions.extend(zip(raw_image_paths, class_idxs.ravel()))
         if save_logits:
           if saved_logits is None:
-            saved_logits = outputs[2]
+            saved_logits = outputs[3]
           else:
-            saved_logits = np.vstack((saved_logits, outputs[2]))
+            saved_logits = np.vstack((saved_logits, outputs[3]))
 
-        print "Evaluated step: %d" % (step,)
-
-        predictions = outputs[3]
-
+        predictions = outputs[0]
         true_count += np.sum(predictions)
 
         print print_str % (
           step,
           true_count,
-          (step + 1) * cfg.TEST_BATCH_SIZE,
-          true_count / ((step + 1.) * cfg.TEST_BATCH_SIZE),
-          dt/cfg.TEST_BATCH_SIZE*1000
+          (step + 1) * cfg.BATCH_SIZE,
+          true_count / ((step + 1.) * cfg.BATCH_SIZE),
+          dt/cfg.BATCH_SIZE*1000
         )
 
         step += 1
-        total_sample_count += cfg.TEST_BATCH_SIZE
+        total_sample_count += cfg.BATCH_SIZE
 
     except tf.errors.OutOfRangeError as e:
-      
+
       if save_classification_results:
         print "Saving classsification results"
         p = os.path.join(summary_dir, "classification_results-%d.pkl" % (global_step,))
