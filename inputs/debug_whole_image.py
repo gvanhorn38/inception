@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 import sys
 
-from inception.v3.config import parse_config_file 
+from inception.v3.config import parse_config_file
 from construct import construct_network_input_nodes
 
 
@@ -24,7 +24,7 @@ def debug(tfrecord_path, config_path):
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = True,
     augment=False,
-    shuffle_batch=False, 
+    shuffle_batch=False,
     cfg=cfg
   )
 
@@ -35,17 +35,17 @@ def debug(tfrecord_path, config_path):
 
       tf.initialize_all_variables().run()
       threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-    
-      while True: 
+
+      while True:
         output = sess.run([images, labels_sparse])
         for image, label in zip(output[0], output[1]):
-            
+
             plt.imshow((image * cfg.IMAGE_STD + cfg.IMAGE_MEAN).astype(np.uint8))
             plt.title("Class: %d" % (label,))
             plt.show()
-            t = raw_input("push button")
-            if t != '':
-              return
-            
+            #t = raw_input("push button")
+            #if t != '':
+            #  return
+
 if __name__ == '__main__':
   debug(sys.argv[1], sys.argv[2])

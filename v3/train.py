@@ -47,6 +47,9 @@ def add_loss(graph, logits, labels_sparse, scale=None):
 
 def train(tfrecords, logdir, cfg, first_iteration=False):
 
+  USE_EXTRA_CLASSIFICATOIN_HEAD = True
+  USE_THIRD_CLASSIFICATION_HEAD = True
+
   graph = tf.get_default_graph()
 
   sess_config = tf.ConfigProto(
@@ -59,26 +62,27 @@ def train(tfrecords, logdir, cfg, first_iteration=False):
   )
 
   # Input Nodes
-  images, labels_sparse = construct_network_input_nodes(
+  images, labels_sparse, image_paths = construct_network_input_nodes(
     tfrecords=tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=None,
-    batch_size=cfg.TRAIN_BATCH_SIZE,
+    batch_size=cfg.BATCH_SIZE,
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = True,
     augment=cfg.AUGMENT_IMAGE,
+    shuffle_batch=True,
     cfg=cfg
   )
 
   # Inference Nodes
-  features = build_inception_v3.build(graph, images, cfg.NUM_CLASSES)
+  features = v3.build(graph, images, cfg.NUM_CLASSES, cfg)
 
   if first_iteration:
     # conv kernels, gamma and beta for batch normalization
     original_inception_vars = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)]
 
   # Add the softmax logits
-  logits = build_inception_v3.add_logits(graph, features, cfg.NUM_CLASSES)
+  logits = v3.add_logits(graph, features, cfg.NUM_CLASSES)
 
   # Loss Nodes
   primary_loss = add_loss(graph, logits, labels_sparse)
@@ -86,14 +90,14 @@ def train(tfrecords, logdir, cfg, first_iteration=False):
    # We need to add the extra classification head here.
   if USE_EXTRA_CLASSIFICATOIN_HEAD:
     mixed_7_output = graph.get_tensor_by_name('mixed_7/join:0')
-    second_head_features = build_inception_v3.add_layers_for_second_classification_head(graph, mixed_7_output, cfg.TRAIN_BATCH_SIZE)
-    second_head_logits = build_inception_v3.add_logits(graph, second_head_features, cfg.NUM_CLASSES)
+    second_head_features = v3.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
+    second_head_logits = v3.add_logits(graph, second_head_features, cfg.NUM_CLASSES)
     second_head_loss = add_loss(graph, second_head_logits, labels_sparse, 0.3)
 
   if USE_THIRD_CLASSIFICATION_HEAD:
     mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
-    third_head_features = build_inception_v3.add_layers_for_third_classification_head(graph, mixed_2_output, cfg.TRAIN_BATCH_SIZE)
-    third_head_logits = build_inception_v3.add_logits(graph, third_head_features, cfg.NUM_CLASSES)
+    third_head_features = v3.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
+    third_head_logits = v3.add_logits(graph, third_head_features, cfg.NUM_CLASSES)
     third_head_loss = add_loss(graph, third_head_logits, labels_sparse, 0.3)
 
   # Regularized Loss
@@ -241,7 +245,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False):
         # increment the global step counter
         step = global_step.eval()
 
-        print print_str % (step, fetched[0], (dt / cfg.TRAIN_BATCH_SIZE) * 1000)
+        print print_str % (step, fetched[0], (dt / cfg.BATCH_SIZE) * 1000)
         print "Primary loss: %0.3f" % (fetched[2],)
         if USE_EXTRA_CLASSIFICATOIN_HEAD:
           print "Secondary loss: %0.3f" % (fetched[3],)

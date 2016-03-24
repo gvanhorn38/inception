@@ -70,7 +70,7 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = False,
     augment=False,
-    shuffle_batch=False,
+    shuffle_batch=True,
     cfg=cfg
   )
 
@@ -93,6 +93,8 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
 
 
   top_k_op = tf.nn.in_top_k(logits, labels_sparse, 1)
+
+  class_scores, predicted_classes = tf.nn.top_k(logits)
 
   global_step = tf.Variable(0, name='global_step', trainable=False)
   global_step_inc = tf.count_up_to(global_step, cfg.NUM_PREP_ITERATIONS, name=None)
@@ -169,11 +171,14 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
         if cfg.DEBUG:
           outputs = sess.run([top_k_op, compute_averages_op, m, v])
         else:
-          outputs = sess.run([top_k_op, compute_averages_op])
+          outputs = sess.run([top_k_op, compute_averages_op, predicted_classes, labels_sparse, image_paths])
 
         global_step_inc.eval()
 
         dt = time.time()-t
+
+        #for pred, gt, p in zip(outputs[2], outputs[3], outputs[4]):
+        #    print "%s\t%s\t%s" % (pred, gt, p)
 
         predictions = outputs[0]
         true_count = np.sum(predictions)
