@@ -15,18 +15,6 @@ def parse_args():
                         help='paths to tfrecords files', type=str,
                         nargs='+', required=True)
 
-#     parser.add_argument('-n', '--num_classes', dest='num_classes',
-#                         help='The number of classes.',
-#                         required=True, type=int)
-
-#     parser.add_argument('-b', '--num_steps', dest='num_steps',
-#                         help='The number of steps to take. (the number of batches to run)',
-#                         required=True, type=int)
-
-    # parser.add_argument('--input', dest='input',
-    #                     help='path to a pickle file with the image and label data', type=str,
-    #                     required=True)
-
     parser.add_argument('--training_checkpoint_dir', dest='checkpoint_dir',
                           help='path to directory where the checkpoint files are stored', type=str,
                           required=True)
