@@ -22,8 +22,8 @@ def debug(tfrecord_path, config_path):
     num_epochs=None,
     batch_size=cfg.BATCH_SIZE,
     num_threads=cfg.NUM_INPUT_THREADS,
-    add_summaries = True,
-    augment=False,
+    add_summaries = False,
+    augment=cfg.AUGMENT_IMAGE,
     shuffle_batch=False,
     cfg=cfg
   )
@@ -43,9 +43,9 @@ def debug(tfrecord_path, config_path):
             plt.imshow((image * cfg.IMAGE_STD + cfg.IMAGE_MEAN).astype(np.uint8))
             plt.title("Class: %d" % (label,))
             plt.show()
-            #t = raw_input("push button")
-            #if t != '':
-            #  return
+            t = raw_input("push button")
+            if t != '':
+              return
 
 if __name__ == '__main__':
   debug(sys.argv[1], sys.argv[2])

@@ -1,4 +1,5 @@
 
+import bbox
 import whole_image
 
 WHOLE_IMAGE_INPUT = 'whole_image_input' # Pass the entire image in 
@@ -36,5 +37,7 @@ def construct_network_input_nodes(
 #       # Global configuration
 #       cfg=None
     )
+  elif input_type == BBOX_INPUT:
+    return bbox.input_nodes(tfrecords=tfrecords, **kwargs)
   else:
     raise ValueError('unknown input type')
