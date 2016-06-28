@@ -45,10 +45,11 @@ def add_loss(graph, logits, labels_sparse, scale=None):
   # sum of the cross entropy loss and the l2 norm weight loss
   #return tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-def train(tfrecords, logdir, cfg, first_iteration=False):
+def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxiliary_variables=False):
 
   USE_EXTRA_CLASSIFICATOIN_HEAD = True
   USE_THIRD_CLASSIFICATION_HEAD = True
+
 
   graph = tf.get_default_graph()
 
@@ -62,7 +63,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False):
   )
 
   # Input Nodes
-  images, labels_sparse, image_paths = construct_network_input_nodes(
+  images, labels_sparse, image_paths, instance_ids = construct_network_input_nodes(
     tfrecords=tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=None,
@@ -76,8 +77,19 @@ def train(tfrecords, logdir, cfg, first_iteration=False):
 
   # Inference Nodes
   features = v3.build(graph, images, cfg.NUM_CLASSES, cfg)
-
+  
   if first_iteration:
+    
+    # Create the auxiliary classification nodes and restore the variables
+    if restore_initial_auxiliary_variables:
+      if USE_EXTRA_CLASSIFICATOIN_HEAD:
+        mixed_7_output = graph.get_tensor_by_name('mixed_7/join:0')
+        second_head_features = v3.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
+      
+      if USE_THIRD_CLASSIFICATION_HEAD:
+        mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
+        third_head_features = v3.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
+    
     # conv kernels, gamma and beta for batch normalization
     original_inception_vars = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)]
 
@@ -89,14 +101,18 @@ def train(tfrecords, logdir, cfg, first_iteration=False):
 
    # We need to add the extra classification head here.
   if USE_EXTRA_CLASSIFICATOIN_HEAD:
-    mixed_7_output = graph.get_tensor_by_name('mixed_7/join:0')
-    second_head_features = v3.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
+    # Create the auxiliary classification nodes if its not the first iteration, or if we don't want to restore them from a previous model
+    if not first_iteration or not restore_initial_auxiliary_variables:
+      mixed_7_output = graph.get_tensor_by_name('mixed_7/join:0')
+      second_head_features = v3.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
     second_head_logits = v3.add_logits(graph, second_head_features, cfg.NUM_CLASSES)
     second_head_loss = add_loss(graph, second_head_logits, labels_sparse, 0.3)
 
   if USE_THIRD_CLASSIFICATION_HEAD:
-    mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
-    third_head_features = v3.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
+    # Create the auxiliary classification nodes if its not the first iteration, or if we don't want to restore them from a previous model
+    if not first_iteration or not restore_initial_auxiliary_variables:
+      mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
+      third_head_features = v3.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
     third_head_logits = v3.add_logits(graph, third_head_features, cfg.NUM_CLASSES)
     third_head_loss = add_loss(graph, third_head_logits, labels_sparse, 0.3)
 

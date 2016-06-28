@@ -7,7 +7,13 @@ import image_augmentations
 def extract_bbox(image, bbox, random_expand=False):
   
   image_height, image_width = image.shape[:2]
-  bbox_x, bbox_y, bbox_width, bbox_height = bbox
+  
+  # the bbox should be in normalized coordinates
+  x, y, w, h = bbox
+  bbox_x = int(image_width * x) 
+  bbox_y = int(image_height * y)
+  bbox_width = int(image_width * w)
+  bbox_height = int(image_height * h)
   
   # Basic protection
   bbox_x = max(0, bbox_x)
@@ -68,7 +74,8 @@ def input_nodes(
       features = {
         'path'  : tf.FixedLenFeature([], tf.string),
         'label' : tf.FixedLenFeature([], tf.int64),
-        'bbox'  : tf.FixedLenFeature([4], tf.int64),
+        'bbox'  : tf.FixedLenFeature([4], tf.float32),
+        'instance' : tf.FixedLenFeature([], tf.string)
       }
     )
 
@@ -76,7 +83,8 @@ def input_nodes(
     path = features['path']
     label = tf.cast(features['label'], tf.int32)
     bbox = features['bbox'] # [x, y, width, height]
-  
+    instance_id = features['instance']
+    
     image = tf.read_file(path)
     image = tf.image.decode_jpeg(image, channels=3)
     image = tf.cast(image, tf.float32)
@@ -123,8 +131,8 @@ def input_nodes(
 
     # Place the images on another queue that will be sampled by the model
     if shuffle_batch:
-      images, sparse_labels, paths = tf.train.shuffle_batch(
-        [image, label, path],
+      images, sparse_labels, paths, instance_ids = tf.train.shuffle_batch(
+        [image, label, path, instance_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -134,8 +142,8 @@ def input_nodes(
       )
 
     else:
-      images, sparse_labels, paths = tf.train.batch(
-        [image, label, path],
+      images, sparse_labels, paths, instance_ids = tf.train.batch(
+        [image, label, path, instance_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -143,6 +151,6 @@ def input_nodes(
       )
 
   # return a batch of images and their labels
-  return images, sparse_labels, paths
+  return images, sparse_labels, paths, instance_ids
   
   

@@ -63,7 +63,7 @@ def prep(tfrecords, checkpoint_dir, save_dir, cfg):
   )
 
   # Input Nodes
-  images, labels_sparse, image_paths = construct_network_input_nodes(tfrecords,
+  images, labels_sparse, image_paths, instance_ids = construct_network_input_nodes(tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=None,
     batch_size=cfg.BATCH_SIZE,

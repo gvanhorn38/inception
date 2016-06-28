@@ -3,7 +3,7 @@ import pickle
 import sys
 
 from config import parse_config_file
-import test
+import test_2 as test
 
 # GVH: For GPU restriction use CUDA_VISIBLE_DEVICES=0 python start_test ....
 
@@ -38,6 +38,10 @@ def parse_args():
     parser.add_argument('--save_logits', dest='save_logits',
                         help='Store the logit outputs for each image',
                         action='store_true', default=False)
+    
+    parser.add_argument('--max_iterations', dest='max_iterations',
+                        help='Maximum number of iterations to run',
+                        required=False, type=int, default=None)
 
     args = parser.parse_args()
     
@@ -69,5 +73,6 @@ if __name__ == '__main__':
       cfg=cfg,
       summary_dir = args.summary_dir,
       save_classification_results=args.save_classification_results,
-      save_logits=args.save_logits
+      save_logits=args.save_logits,
+      max_iterations = args.max_iterations
     )

@@ -40,6 +40,9 @@ def parse_args():
                           help='Specify the visible gpu.',
                           required=False, type=int, default=1)
 
+    parser.add_argument('--test_max_iterations', dest='max_test_iterations',
+                          help='Maximum number of iterations to run the test network',
+                          required=False, type=int, default=None)
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -84,11 +87,20 @@ if __name__ == '__main__':
         --tfrecords %s \
         --checkpoint_dir %s \
         --config %s"""
+        params = [args.cuda_visible_devices, " ".join(args.test_tfrecords), args.preped_checkpoint_dir, args.config_file]
+        
         if args.summary_dir:
           eval_cmd += " --summary_dir %s"
-          filled_cmd = eval_cmd % (args.cuda_visible_devices, " ".join(args.test_tfrecords), args.preped_checkpoint_dir, args.config_file, args.summary_dir)
-        else:
-          filled_cmd = eval_cmd % (args.cuda_visible_devices, " ".join(args.test_tfrecords), args.preped_checkpoint_dir, args.config_file)
+          params += [args.summary_dir]
+          #filled_cmd = eval_cmd % (args.cuda_visible_devices, " ".join(args.test_tfrecords), args.preped_checkpoint_dir, args.config_file, args.summary_dir)
+        #else:
+        #  filled_cmd = eval_cmd % (args.cuda_visible_devices, " ".join(args.test_tfrecords), args.preped_checkpoint_dir, args.config_file)
+        if args.max_test_iterations != None:
+          eval_cmd += " --max_iterations %d"
+          params += [args.max_test_iterations]
+        
+        filled_cmd = eval_cmd % tuple(params)
+        
         subprocess.call(filled_cmd, shell=True)
 
       else:

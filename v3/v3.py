@@ -81,7 +81,9 @@ def add_conv(
     gamma_wd=BATCHNORM_GAMMA_WD, 
     variance_epsilon=BATCHNORM_VARIANCE_EPSILON, 
     scale_after_normalization=BATCHNORM_SCALE_AFTER_NORM,
-    use_batch_statistics=True
+    use_batch_statistics=True,
+    batch_normalize=True,
+    add_relu=True
   ):
 
   with graph.name_scope('conv') as conv_scope:
@@ -90,70 +92,73 @@ def add_conv(
     kernel = _variable_with_weight_decay(
       name='conv2d_params',
       shape=shape,
-      initializer=tf.contrib.layers.xavier_initializer_conv2d(uniform=True, seed=None, dtype=tf.float32),
+      initializer=tf.contrib.layers.xavier_initializer_conv2d(uniform=False, seed=None, dtype=tf.float32),
       wd=wd
     )
     conv = tf.nn.conv2d(input, filter=kernel, strides=strides, padding=padding)
     graph.add_to_collection('conv_params', kernel)
-
-    with graph.name_scope('batchnorm') as batch_scope:
-      
-      beta = _variable_with_weight_decay(
-        name='beta', 
-        shape=[shape[3]], 
-        initializer=tf.truncated_normal_initializer(stddev=0.04),
-        wd=beta_wd
-      )
-      graph.add_to_collection('batchnorm_params', beta)
-      
-      gamma = _variable_with_weight_decay(
-        name='gamma', 
-        shape=[shape[3]], 
-        initializer=tf.truncated_normal_initializer(stddev=0.04), 
-        wd=gamma_wd
-      )
-      graph.add_to_collection('batchnorm_params', gamma)
-
-      # During training, we want to use the batch statistics
-      if use_batch_statistics:
-        mu, var = tf.nn.moments(conv, [0, 1, 2], name=batch_scope)
-        mean = graph.get_operation_by_name(batch_scope + "mean").outputs[0]
-
-      # During testing and eval we want to use the global statistics
-      # This need to be filled in by the moving averages version
-      else:
-        mean = _variable_with_weight_decay(
-          name='mean',
-          shape=[1, 1, 1, shape[3]],
-          initializer=tf.constant_initializer(0.0), 
-          wd=0
+    if batch_normalize:
+      with graph.name_scope('batchnorm') as batch_scope:
+        
+        beta = _variable_with_weight_decay(
+          name='beta', 
+          shape=[shape[3]], 
+          initializer=tf.truncated_normal_initializer(stddev=0.04),
+          wd=beta_wd
         )
-        mu = tf.squeeze(mean, squeeze_dims=[0, 1, 2])
-       
-        var = _variable_with_weight_decay(
-          name='variance',
-          shape=[shape[3]],
-          initializer=tf.constant_initializer(0.0), 
-          wd=0
+        graph.add_to_collection('batchnorm_params', beta)
+        
+        gamma = _variable_with_weight_decay(
+          name='gamma', 
+          shape=[shape[3]], 
+          initializer=tf.truncated_normal_initializer(stddev=0.04), 
+          wd=gamma_wd
         )
-        # we should probably be using this...
-        #unbiased_var = var * (train_batch_size / (train_batch_size - 1))
+        graph.add_to_collection('batchnorm_params', gamma)
 
-      # We'll use this collection to add these to the moving average operation
-      graph.add_to_collection('batchnorm_mean_var', mean)
-      graph.add_to_collection('batchnorm_mean_var', var)
+        # During training, we want to use the batch statistics
+        if use_batch_statistics:
+          mu, var = tf.nn.moments(conv, [0, 1, 2], name=batch_scope)
+          mean = graph.get_operation_by_name(batch_scope + "mean").outputs[0]
 
-      batchnorm = tf.nn.batch_norm_with_global_normalization(
-        t = conv, m=mu, v=var, beta=beta, gamma=gamma,
-        variance_epsilon= variance_epsilon,
-        scale_after_normalization=scale_after_normalization,
-        name=batch_scope
-      )
+        # During testing and eval we want to use the global statistics
+        # This need to be filled in by the moving averages version
+        else:
+          mean = _variable_with_weight_decay(
+            name='mean',
+            shape=[1, 1, 1, shape[3]],
+            initializer=tf.constant_initializer(0.0), 
+            wd=0
+          )
+          mu = tf.squeeze(mean, squeeze_dims=[0, 1, 2])
+        
+          var = _variable_with_weight_decay(
+            name='variance',
+            shape=[shape[3]],
+            initializer=tf.constant_initializer(0.0), 
+            wd=0
+          )
+          # we should probably be using this...
+          #unbiased_var = var * (train_batch_size / (train_batch_size - 1))
 
-    # Activation Function
-    # We could add some checks to confirm that the values are finite
-    activations = tf.nn.relu(batchnorm, name=conv_scope)
+        # We'll use this collection to add these to the moving average operation
+        graph.add_to_collection('batchnorm_mean_var', mean)
+        graph.add_to_collection('batchnorm_mean_var', var)
 
+        batchnorm = tf.nn.batch_norm_with_global_normalization(
+          t = conv, m=mu, v=var, beta=beta, gamma=gamma,
+          variance_epsilon= variance_epsilon,
+          scale_after_normalization=scale_after_normalization,
+          name=batch_scope
+        )
+
+      # Activation Function
+      # We could add some checks to confirm that the values are finite
+      activations = tf.nn.relu(batchnorm, name=conv_scope)
+    elif add_relu:
+      activations = tf.nn.relu(conv, name=conv_scope)
+    else:
+      activations = conv
   return activations
 
 def add_max_pool(graph, input, ksize, strides, padding, name=None):
@@ -707,6 +712,7 @@ def add_figure7(graph, input,
   )
 
 # Rather than passing the graph around, we could do `with graph.as_default():`
+# GVH: num_classes is not used
 def build(graph, input, num_classes, cfg):
 
   # conv

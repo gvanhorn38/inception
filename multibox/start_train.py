@@ -1,10 +1,10 @@
-import argparse
-import sys
+from easydict import EasyDict
 
-from config import parse_config_file
 from train import train
 
-# GVH: For GPU restriction use CUDA_VISIBLE_DEVICES=0 python start_test ....
+sys.path.append('..')
+import v3.v3_with_log as v3
+from v3.config import parse_config_file
 
 def parse_args():
 
@@ -24,10 +24,6 @@ def parse_args():
 
     parser.add_argument('--first_iteration', dest='first_iteration',
                         help='Is this the first iteration? i.e. should we restore the original inception weights?',
-                        action='store_true')
-                        
-    parser.add_argument('--restore_auxiliary_variables', dest='restore_auxiliary_variables',
-                        help='If this is the first iteration, and the model we are starting from has the auxiliary variables saved, then use this switch to determine if we should restore the auxiliary variables.',
                         action='store_true')
 
     if len(sys.argv) == 1:
@@ -55,6 +51,19 @@ if __name__ == '__main__':
       tfrecords=args.tfrecords,
       logdir=args.logdir,
       cfg=cfg,
-      first_iteration=args.first_iteration,
-      restore_initial_auxiliary_variables = args.restore_auxiliary_variables
+      first_iteration=args.first_iteration
     )
+
+
+
+if __name__ == '__main__':
+
+  cfg = EasyDict(v3.default_config())
+  cfg.PHASE = "TRAIN"
+  cfg.USE_BATCH_STATISTICS = True
+  
+  
+  
+  train.train(tfrecords, cfg)
+  
+  

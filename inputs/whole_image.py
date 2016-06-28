@@ -104,4 +104,4 @@ def input_nodes(
       )
 
   # return a batch of images and their labels
-  return images, sparse_labels, paths
+  return images, sparse_labels, paths, None
