@@ -40,7 +40,7 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
   
   with graph.as_default(), sess.as_default():
     
-    images, batched_bboxes, batched_num_bboxes, paths, gtb, best_prior_indices = input_nodes(
+    images, batched_bboxes, batched_num_bboxes, paths = input_nodes(
       tfrecords=tfrecords,
       bbox_priors = bbox_priors,
       max_num_bboxes=cfg.MAX_NUM_BBOXES,
@@ -79,9 +79,9 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
     })
     
     # Restore the parameters
-    saver = tf.train.Saver(shadow_vars)
+    saver = tf.train.Saver(shadow_vars, reshape=True)
 
-    fetches = [locations, confidences, images, gtb]
+    fetches = [locations, confidences, images, batched_bboxes, batched_num_bboxes]
     
     coord = tf.train.Coordinator()
     
@@ -119,6 +119,7 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
         confs = outputs[1]
         imgs = outputs[2]
         gt_bboxes = outputs[3]
+        gt_num_bboxes = outputs[4]
         
         print locs.shape
         print confs.shape
@@ -129,29 +130,21 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
           image = imgs[b]
           plt.imshow((image * cfg.IMAGE_STD + cfg.IMAGE_MEAN).astype(np.uint8))
           
-          # Draw the GT Box
-          gt_bbox = gt_bboxes[b][0] # Assume 1
-          xmin, ymin, xmax, ymax = gt_bbox * cfg.INPUT_SIZE
-          plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'b-')
-          
-          print confs[b].shape
+           # Draw the GT Boxes in blue
+          for i in range(gt_num_bboxes[b]):
+            gt_bbox = gt_bboxes[b][i]
+            xmin, ymin, xmax, ymax = gt_bbox * cfg.INPUT_SIZE
+            plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'b-')
+
+          # Draw the most confident boxes in red
           indices = np.argsort(confs[b].ravel())[::-1]
-          print "Confidences: %s" % ([confs[b][i][0] for i in indices[:5]],)
+          for index in indices[0:gt_num_bboxes[b]]:
           
-          # Draw the most confident box in red
-          loc = locs[b][indices[0]]
-          prior = bbox_priors[indices[0]]
-          xmin, ymin, xmax, ymax = (prior + loc) * cfg.INPUT_SIZE
-          plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'r-')
-          
-          # Draw the next 4 boxes in green
-          for index in indices[1:5]:
-          
-            loc = locs[b][index]
-            prior = bbox_priors[index]
+            loc = locs[b][index].ravel()
+            prior = np.array(bbox_priors[index])
             
             xmin, ymin, xmax, ymax = (prior + loc) * cfg.INPUT_SIZE
-            plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'g-')
+            plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'r-')
           
           plt.show()
           

@@ -158,6 +158,14 @@ def augment_image_and_bboxes(image, orig_bboxes, do_random_flip, do_random_shift
   perturbed_bboxes = np.array(gtg_bboxes, dtype=np.float32)
   
   return [perturbed_image, perturbed_bboxes]
+
+
+def reshape_bboxes(bboxes):
+  """
+  Convert bboxes from [x1, y1, x2, y2] to [y1, x1, y2, x2]
+  bboxes : [num_bboxes, 4]
+  """
+  return [bboxes[:,[1, 0, 3, 2]]]
   
 def input_nodes(
   # An array of paths to tfrecords files
@@ -203,14 +211,17 @@ def input_nodes(
       serialized_example,
       features = {
         'path'  : tf.FixedLenFeature([], tf.string),
-        'bboxes'  : tf.FixedLenFeature([4], tf.float32),#tf.VarLenFeature(tf.float32),
+        'bboxes'  : tf.VarLenFeature(tf.float32), # This is a flat list that will be grouped into 4s [x_min, y_min, x_max, y_max]
         'num_bboxes' : tf.FixedLenFeature([], tf.int64)
       }
     )
 
   
     path = features['path']
-    bboxes = tf.reshape(features['bboxes'], [-1, 4]) # Format: [x_min, y_min, x_max, y_max]
+    orig_bboxes = features['bboxes'] # Format: [x_min, y_min, x_max, y_max]
+    bboxes = tf.reshape(tf.sparse_tensor_to_dense(features['bboxes']), [-1, 4])
+    #print "Bboxes shape: %s" % (bboxes.get_shape().as_list())
+    
     num_bboxes = tf.cast(features['num_bboxes'], tf.int32)
     
     image = tf.read_file(path)
@@ -219,9 +230,7 @@ def input_nodes(
     
     
     if add_summaries:
-      # bboxes needes to be in [y_min, x_min, y_max, x_max] format
-      # GVH: Assume just one bounding box for now
-      tf.image_summary('orig_image', tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), tf.reshape(tf.gather(tf.squeeze(bboxes) , [1, 0, 3, 2]), [1, 1, 4])))
+      tf.image_summary('orig_image', tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), tf.reshape(tf.py_func(reshape_bboxes, [bboxes], [tf.float32])[0], [1, -1, 4])))
     
     
     # This is where we will do some image augmentations
@@ -233,14 +242,15 @@ def input_nodes(
       bboxes = output[1]
     
       if add_summaries:
-        # bboxes needes to be in [y_min, x_min, y_max, x_max] format
-        # GVH: Assume just one bounding box for now
-        tf.image_summary('augmented_image', tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), tf.reshape(tf.gather(tf.squeeze(bboxes) , [1, 0, 3, 2]), [1, 1, 4])))
+        tf.image_summary('augmented_image', tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), tf.reshape(tf.py_func(reshape_bboxes, [bboxes], [tf.float32])[0], [1, -1, 4])))
     
       
     # pad the number of boxes so that all images have `max_num_bboxes`
     # We could have had the generation code do this.
-    bboxes = tf.pad(bboxes, tf.pack([tf.pack([0, tf.maximum(0, max_num_bboxes - num_bboxes)]), [0, 0]]))
+    num_rows_to_pad = tf.maximum(0, max_num_bboxes - num_bboxes)
+    bboxes = tf.pad(bboxes, tf.pack([tf.pack([0, num_rows_to_pad]), [0, 0]]))
+    #print "Bboxes shape: %s" % (bboxes.get_shape().as_list())
+
     
     if cfg.MAINTAIN_ASPECT_RATIO:
       # Resize the image up, then pad with 0s
@@ -251,9 +261,6 @@ def input_nodes(
       
       # GVH: We don't need to scale the bounding boxes when preserving the aspect ratio
       # but we do need to take into account the extra padding 
-      #height_factor = output[1]
-      #width_factor = output[2]
-      #bboxes = bboxes * tf.pack([width_factor, height_factor, width_factor, height_factor])
       
       new_height = output[1] 
       new_width = output[2]
@@ -262,46 +269,20 @@ def input_nodes(
       height_diff = tf.cast(cfg.INPUT_SIZE - new_height, tf.float32) / tf.cast(cfg.INPUT_SIZE, tf.float32)
       bboxes = bboxes * tf.cast(tf.pack([new_width, new_height, new_width, new_height]), tf.float32) - tf.cast(tf.pack([width_diff, height_diff, width_diff, height_diff]), tf.float32)
       bboxes = bboxes / tf.cast(tf.pack([cfg.INPUT_SIZE, cfg.INPUT_SIZE, cfg.INPUT_SIZE, cfg.INPUT_SIZE]), tf.float32)
-      
-    #else:
-    #  im_h, im_w, _ = tf.unpack(tf.shape(image))
-    #  image = tf.image.resize_images(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
-      
-    #  height_greater_than_width = tf.greater(im_h, im_w)
     
-    #####
-    # GVH: getting rid of this matching process and just going to pass the normal ground 
-    # truth bounding box to the cost function. 
-    ##################################################
-    # GVH: ASSUME just one bounding box per image
-    bbox = tf.squeeze(bboxes)  
-    
-    
-    
-    # We need to match the bounding boxes to the closest ground truth prior box
-    # And subtract that prior box from the ground truth box
-    
-    best_prior_index = tf.argmin(tf.sqrt(tf.reduce_sum((bbox_priors - bbox) ** 2 , 1)), 0)
-    best_prior_bbox = tf.gather(bbox_priors, best_prior_index)
-    bbox_residual = bbox - best_prior_bbox
-    
-    if add_summaries:
-      # bboxes needes to be in [y_min, x_min, y_max, x_max] format
-      tf.image_summary('best_prior', tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), tf.reshape(tf.gather(best_prior_bbox, [1, 0, 3, 2]), [1, 1, 4])))
-    
-    bboxes_residuals = tf.expand_dims(bbox_residual, 0)
-    bboxes_residuals.set_shape([max_num_bboxes, 4])
-    bboxes.set_shape([max_num_bboxes, 4])
-    best_prior_index.set_shape([])
-    ##################################################
+    else:
+      raise Exception("Not implemented: aspect ratio squishing")
     
     image -= cfg.IMAGE_MEAN
     image /= cfg.IMAGE_STD
-
+    
+    bboxes.set_shape([max_num_bboxes, 4])
+    #print "Bboxes shape: %s" % (bboxes.get_shape().as_list())
+    
     # Place the images on another queue that will be sampled by the model
     if shuffle_batch:
-      images, batched_bboxes, batched_num_bboxes, paths, gt_bboxes, best_prior_indices = tf.train.shuffle_batch(
-        [image, bboxes_residuals, num_bboxes, path, bboxes, best_prior_index],
+      images, batched_bboxes, batched_num_bboxes, paths = tf.train.shuffle_batch(
+        [image, bboxes, num_bboxes, path],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -311,8 +292,8 @@ def input_nodes(
       )
 
     else:
-      images, batched_bboxes, batched_num_bboxes, paths, gt_bboxes, best_prior_indices = tf.train.batch(
-        [image, bboxes_residuals, num_bboxes, path, bboxes, best_prior_index],
+      images, batched_bboxes, batched_num_bboxes, paths = tf.train.batch(
+        [image, bboxes, num_bboxes, path],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -320,4 +301,4 @@ def input_nodes(
       )
 
   # return a batch of images and their labels
-  return images, batched_bboxes, batched_num_bboxes, paths, gt_bboxes, best_prior_indices
+  return images, batched_bboxes, batched_num_bboxes, paths

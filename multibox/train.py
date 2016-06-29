@@ -37,7 +37,7 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
   
   with graph.as_default(), session.as_default():
     
-    images, batched_bboxes, batched_num_bboxes, paths, gtb, best_prior_indices = input_nodes(
+    images, batched_bboxes, batched_num_bboxes, paths = input_nodes(
       tfrecords=tfrecords,
       bbox_priors = bbox_priors,
       max_num_bboxes=cfg.MAX_NUM_BBOXES,
@@ -65,7 +65,7 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
     
     #loss, matching = build.add_loss(graph, locations, confidences, batched_bboxes, batched_num_bboxes, cfg)
     #location_loss, confidence_loss, matching = build.add_loss(graph, locations, confidences, batched_bboxes, batched_num_bboxes, cfg)
-    location_loss, confidence_loss, matching = build.add_loss(graph, locations, confidences, gtb, batched_num_bboxes, bbox_priors, cfg)
+    location_loss, confidence_loss, matching = build.add_loss(graph, locations, confidences, batched_bboxes, batched_num_bboxes, bbox_priors, cfg)
     loss = location_loss + confidence_loss
     
     global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -84,13 +84,6 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
       decay = cfg.RMSPROP_DECAY, # 0.9, # Parameter setting from the arxiv paper
       epsilon = cfg.RMSPROP_EPSILON  # 1.0 #Parameter setting from the arxiv paper
     )
-    
-    # optimizer = tf.train.MomentumOptimizer(
-    #   learning_rate = learning_rate, 
-    #   momentum = 0.5, 
-    #   use_locking=False, 
-    #   name='Momentum'
-    # )
 
     # Compute the gradients using the loss
     gradients = optimizer.compute_gradients(loss)
@@ -163,7 +156,7 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
       flush_secs=30
     )
     
-    fetches = [loss, training_op, learning_rate, confidences, matching, location_loss, confidence_loss, best_prior_indices]
+    fetches = [loss, training_op, learning_rate, confidences, matching, location_loss, confidence_loss]
 
     # Print some information to the command line on each run
     print_str = ', '.join([
@@ -203,7 +196,7 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
 
         print print_str % (step, fetched[2], fetched[0], (dt / cfg.BATCH_SIZE) * 1000)
         
-        if True:
+        if False:
           confs = fetched[3][0]
           print "Conf stats: Min: %0.3f\tMax: %0.3f\tMean: %0.3f\tMedian: %0.3f\tArgMax: %d" % (np.min(confs), np.max(confs), np.mean(confs), np.median(confs), np.argmax(confs))
           matches = fetched[4][:len(bbox_priors)]
