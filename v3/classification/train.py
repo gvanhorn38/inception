@@ -8,9 +8,9 @@ import time
 import numpy as np
 import tensorflow as tf
 
-
-import v3.classification_model as v3
-from inputs.construct import construct_network_input_nodes
+from network_utils import add_logits
+import v3.classification.model as model
+from inputs.classification.construct import construct_network_input_nodes
 
 def add_loss(graph, logits, labels_sparse, scale=None):
 
@@ -41,7 +41,7 @@ def add_loss(graph, logits, labels_sparse, scale=None):
 
 def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxiliary_variables=False):
 
-  USE_EXTRA_CLASSIFICATOIN_HEAD = cfg.USE_EXTRA_CLASSIFICATOIN_HEAD
+  USE_EXTRA_CLASSIFICATION_HEAD = cfg.USE_EXTRA_CLASSIFICATION_HEAD
   USE_THIRD_CLASSIFICATION_HEAD = cfg.USE_THIRD_CLASSIFICATION_HEAD
 
 
@@ -70,44 +70,44 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   )
 
   # Inference Nodes
-  features = v3.build(graph, images, cfg)
+  features = model.build(graph, images, cfg)
   
   if first_iteration:
     
     # Create the auxiliary classification nodes and restore the variables
     if restore_initial_auxiliary_variables:
-      if USE_EXTRA_CLASSIFICATOIN_HEAD:
+      if USE_EXTRA_CLASSIFICATION_HEAD:
         mixed_7_output = graph.get_tensor_by_name('mixed_7/join:0')
-        second_head_features = v3.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
+        second_head_features = model.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
       
       if USE_THIRD_CLASSIFICATION_HEAD:
         mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
-        third_head_features = v3.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
+        third_head_features = model.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
     
     # conv kernels, gamma and beta for batch normalization
     original_inception_vars = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)]
 
   # Add the softmax logits
-  logits = v3.add_logits(graph, features, cfg.NUM_CLASSES)
+  logits = add_logits(graph, features, cfg.NUM_CLASSES)
 
   # Loss Nodes
   primary_loss = add_loss(graph, logits, labels_sparse)
 
    # We need to add the extra classification head here.
-  if USE_EXTRA_CLASSIFICATOIN_HEAD:
+  if USE_EXTRA_CLASSIFICATION_HEAD:
     # Create the auxiliary classification nodes if its not the first iteration, or if we don't want to restore them from a previous model
     if not first_iteration or not restore_initial_auxiliary_variables:
       mixed_7_output = graph.get_tensor_by_name('mixed_7/join:0')
-      second_head_features = v3.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
-    second_head_logits = v3.add_logits(graph, second_head_features, cfg.NUM_CLASSES)
+      second_head_features = model.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
+    second_head_logits = add_logits(graph, second_head_features, cfg.NUM_CLASSES)
     second_head_loss = add_loss(graph, second_head_logits, labels_sparse, 0.3)
 
   if USE_THIRD_CLASSIFICATION_HEAD:
     # Create the auxiliary classification nodes if its not the first iteration, or if we don't want to restore them from a previous model
     if not first_iteration or not restore_initial_auxiliary_variables:
       mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
-      third_head_features = v3.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
-    third_head_logits = v3.add_logits(graph, third_head_features, cfg.NUM_CLASSES)
+      third_head_features = model.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
+    third_head_logits = add_logits(graph, third_head_features, cfg.NUM_CLASSES)
     third_head_loss = add_loss(graph, third_head_logits, labels_sparse, 0.3)
 
   # Regularized Loss
@@ -175,7 +175,8 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   )
 
   # Look to see if there is a checkpoint file
-  ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+  
+  ckpt = tf.train.get_checkpoint_state(save_dir)
   if ckpt:
     ckpt_file = ckpt.model_checkpoint_path
     print "Found checkpoint: %s" % (ckpt_file,)
@@ -190,7 +191,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   tf.histogram_summary(features.op.name, features)
   tf.histogram_summary(logits.op.name, logits)
   tf.scalar_summary('primary_loss', primary_loss)
-  if USE_EXTRA_CLASSIFICATOIN_HEAD:
+  if USE_EXTRA_CLASSIFICATION_HEAD:
       tf.scalar_summary('secondary_loss', second_head_loss)
   if USE_THIRD_CLASSIFICATION_HEAD:
       tf.scalar_summary('tertiary_loss', third_head_loss)
@@ -218,7 +219,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
 
   # Have the session run and evaluate the following ops / tensors:
   fetches = [total_loss, training_op, primary_loss]
-  if USE_EXTRA_CLASSIFICATOIN_HEAD:
+  if USE_EXTRA_CLASSIFICATION_HEAD:
     fetches.append(second_head_loss)
   if USE_THIRD_CLASSIFICATION_HEAD:
     fetches.append(third_head_loss)
@@ -261,7 +262,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
 
         print print_str % (step, fetched[0], (dt / cfg.BATCH_SIZE) * 1000)
         print "Primary loss: %0.3f" % (fetched[2],)
-        if USE_EXTRA_CLASSIFICATOIN_HEAD:
+        if USE_EXTRA_CLASSIFICATION_HEAD:
           print "Secondary loss: %0.3f" % (fetched[3],)
         if USE_THIRD_CLASSIFICATION_HEAD:
           print "Tertiary loss: %0.3f" % (fetched[4],)

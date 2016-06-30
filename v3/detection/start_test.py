@@ -3,7 +3,7 @@ import pickle
 import sys
 
 from config import parse_config_file
-import test_2 as test
+import test
 
 # GVH: For GPU restriction use CUDA_VISIBLE_DEVICES=0 python start_test ....
 
@@ -14,7 +14,11 @@ def parse_args():
     parser.add_argument('--tfrecords', dest='tfrecords',
                         help='paths to tfrecords files', type=str,
                         nargs='+', required=True)
-
+    
+    parser.add_argument('--priors', dest='priors',
+                          help='path to the bounding box priors pickle file', type=str,
+                          required=True)
+    
     parser.add_argument('--checkpoint_dir', dest='checkpoint_dir',
                           help='path to directory where the checkpoint files are stored. The latest model will be tested against.', type=str,
                           required=False, default=None)
@@ -33,10 +37,6 @@ def parse_args():
     
     parser.add_argument('--save_classification_results', dest='save_classification_results',
                         help='For each image, store the class that it was classified as',
-                        action='store_true', default=False)
-    
-    parser.add_argument('--save_logits', dest='save_logits',
-                        help='Store the logit outputs for each image',
                         action='store_true', default=False)
     
     parser.add_argument('--max_iterations', dest='max_iterations',
@@ -73,6 +73,5 @@ if __name__ == '__main__':
       cfg=cfg,
       summary_dir = args.summary_dir,
       save_classification_results=args.save_classification_results,
-      save_logits=args.save_logits,
       max_iterations = args.max_iterations
     )

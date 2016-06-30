@@ -7,9 +7,9 @@ import time
 import numpy as np
 import tensorflow as tf
 
-import v3.classification_model as v3
-from inputs.construct import construct_network_input_nodes
-
+import v3.classification.model as model
+from inputs.classification.construct import construct_network_input_nodes
+from network_utils import add_logits 
 
 def _float_feature(value):
   return tf.train.Feature(float_list=tf.train.FloatList(value=value))
@@ -21,7 +21,7 @@ def _bytes_feature(value):
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
 
 
-def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, save_classification_results=False, save_logits=False, max_iterations=None):
+def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, save_classification_results=False, max_iterations=None):
 
   graph = tf.get_default_graph()
 
@@ -47,9 +47,9 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   )
 
   # Inference Nodes
-  features = v3.build(graph, images, cfg=cfg)
+  features = model.build(graph, images, cfg=cfg)
 
-  logits = v3.add_logits(graph, features, cfg.NUM_CLASSES)
+  logits = add_logits(graph, features, cfg.NUM_CLASSES)
 
   top_k_op = tf.nn.in_top_k(logits, labels_sparse, 1)
 
@@ -79,7 +79,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   })
 
   # Restore the parameters
-  saver = tf.train.Saver(shadow_vars)
+  saver = tf.train.Saver(shadow_vars, reshape=True)
 
   # Write the classification score to the summary directory if it was provided
   if summary_dir != None:
@@ -202,9 +202,10 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
     print('Model %d: precision @ 1 = %.3f' % (global_step, precision))
     
     # keep a conveinence file with the precision
-    precision_file = os.path.join(summary_dir, "precision_summary.txt")
-    with open(precision_file, 'a') as f:
-      print >> f, 'Model %d: precision @ 1 = %.3f' % (global_step, precision)
+    if summary_dir != None:
+      precision_file = os.path.join(summary_dir, "precision_summary.txt")
+      with open(precision_file, 'a') as f:
+        print >> f, 'Model %d: precision @ 1 = %.3f' % (global_step, precision)
     
     if summary_writer != None:
       summary = tf.Summary()
