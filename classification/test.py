@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 import v3.classification_model as v3
-from inception.inputs.construct import construct_network_input_nodes
+from inputs.construct import construct_network_input_nodes
 
 
 def _float_feature(value):
