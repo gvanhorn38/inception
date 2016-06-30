@@ -7,10 +7,21 @@ import time
 import numpy as np
 import tensorflow as tf
 
-import v3
+import v3.classification_model as v3
 from inception.inputs.construct import construct_network_input_nodes
 
-def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, save_classification_results=False, save_logits=False):
+
+def _float_feature(value):
+  return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+
+def _int64_feature(value):
+  return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
+
+def _bytes_feature(value):
+  return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
+
+
+def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, save_classification_results=False, save_logits=False, max_iterations=None):
 
   graph = tf.get_default_graph()
 
@@ -24,7 +35,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   )
 
   # Input Nodes
-  images, labels_sparse, image_paths = construct_network_input_nodes(tfrecords,
+  images, labels_sparse, image_paths, instance_ids = construct_network_input_nodes(tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=1,
     batch_size=cfg.BATCH_SIZE,
@@ -36,7 +47,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   )
 
   # Inference Nodes
-  features = v3.build(graph, images, cfg.NUM_CLASSES, cfg=cfg)
+  features = v3.build(graph, images, cfg=cfg)
 
   logits = v3.add_logits(graph, features, cfg.NUM_CLASSES)
 
@@ -47,21 +58,21 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
 
   coord = tf.train.Coordinator()
 
-  # The prep phase already switched in the moving average variables, so just restore them
+  # Restore the moving average variables for the conv filters, beta and gamma for
+  # batch normalization and the softmax params
+  ema = tf.train.ExponentialMovingAverage(decay=cfg.MOVING_AVERAGE_DECAY)
   shadow_vars = {
-    var.name[:-2] : var
+    ema.average_name(var) : var
     for var in graph.get_collection('conv_params')
   }
   shadow_vars.update({
-    var.name[:-2] : var
-    for var in graph.get_collection('batchnorm_params') # this is the beta and gamma parameters
+    ema.average_name(var) : var
+    for var in graph.get_collection('batchnorm_params')
   })
   shadow_vars.update({
-    var.name[:-2] : var
-    for var in graph.get_collection('softmax_params') # do we want a moving average on this?
+    ema.average_name(var) : var
+    for var in graph.get_collection('softmax_params')
   })
-  # The prep phase computed the averages of the mean and variance, so load them in
-  ema = tf.train.ExponentialMovingAverage(decay=cfg.MOVING_AVERAGE_DECAY)
   shadow_vars.update({
     ema.average_name(var) : var
     for var in graph.get_collection('batchnorm_mean_var')
@@ -89,19 +100,14 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
     'Time/image (ms): %.1f'
   ])
 
-  # Save the actually classifications for later processing
-  if save_classification_results:
-    image_paths_and_predictions = []
-
-  if save_logits:
-    saved_logits = None
+  
 
   fetches = [top_k_op]
   if save_classification_results :
-    fetches += [image_paths, predicted_classes]
-  if save_logits:
-    fetches += [logits]
+    fetches += [image_paths, predicted_classes, logits, instance_ids, labels_sparse]
 
+  # keep a reference around
+  classification_writer = None
 
   # Restore a checkpoint file
   with tf.Session(config=sess_config) as sess:
@@ -126,26 +132,45 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
       # extract global_step from it.
       global_step = int(specific_model_path.split('/')[-1].split('-')[-1])
       print "Found model for global step: %d" % (global_step,)
-
+      
+      # Save the actually classifications for later processing
+      if save_classification_results: 
+        # create a writer for storing the tfrecords
+        output_path = os.path.join(summary_dir, 'classification_results-%d.tfrecords' % (global_step,))
+        classification_writer = tf.python_io.TFRecordWriter(output_path)
+      
       true_count = 0.0  # Counts the number of correct predictions.
       total_sample_count = 0
       step = 0
       while not coord.should_stop():
-
+        
+        if max_iterations != None and step > max_iterations:
+          break
+        
         t = time.time()
         outputs = sess.run(fetches)
         dt = time.time()-t
 
         if save_classification_results:
-          raw_image_paths = outputs[1]
-          class_idxs = outputs[2]
-          image_paths_and_predictions.extend(zip(raw_image_paths, class_idxs.ravel()))
+          batch_image_paths = outputs[1]
+          batch_pred_class_ids = outputs[2].astype(int)
+          batch_logits = outputs[3].astype(float)
+          batch_instance_ids = outputs[4]
+          batch_gt_class_ids = outputs[5].astype(int)
+          
+          for i in range(cfg.BATCH_SIZE):
+            
+            feature={}
+            feature['label'] = _int64_feature([batch_gt_class_ids[i]])
+            feature['path'] = _bytes_feature([batch_image_paths[i]])
+            feature['instance_id'] = _bytes_feature([batch_instance_ids[i]])
+            feature['logits'] = _float_feature(batch_logits[i])
+            feature['pred_label'] = _int64_feature(batch_pred_class_ids[i])
+            
+            example = tf.train.Example(features=tf.train.Features(feature=feature))
 
-        if save_logits:
-          if saved_logits is None:
-            saved_logits = outputs[3]
-          else:
-            saved_logits = np.vstack((saved_logits, outputs[3]))
+            classification_writer.write(example.SerializeToString())
+            
 
         predictions = outputs[0]
         true_count += np.sum(predictions)
@@ -162,32 +187,30 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
         total_sample_count += cfg.BATCH_SIZE
 
     except tf.errors.OutOfRangeError as e:
+      pass
 
-      if save_classification_results:
-        print "Saving classsification results"
-        p = os.path.join(summary_dir, "classification_results-%d.pkl" % (global_step,))
-        with open(p, 'w') as f:
-          pickle.dump(image_paths_and_predictions, f)
+    #except Exception as e:
+    #  print e
+    #  coord.request_stop(e)
 
-      if save_logits:
-        print "Saving logits"
-        p = os.path.join(summary_dir, "saved_logits-%d.pkl" % (global_step,))
-        with open(p, 'w') as f:
-          pickle.dump(saved_logits, f)
+    if save_classification_results:
+      # close the writer
+      classification_writer.close()
 
-      # Compute precision @ 1.
-      precision = true_count / total_sample_count
-      print('Model %d: precision @ 1 = %.3f' % (global_step, precision))
-
-      if summary_writer != None:
-        summary = tf.Summary()
-        summary.ParseFromString(sess.run(summary_op))
-        summary.value.add(tag='Precision @ 1', simple_value=precision)
-        summary_writer.add_summary(summary, global_step)
-
-
-    except Exception as e:
-      coord.request_stop(e)
+    # Compute precision @ 1.
+    precision = true_count / total_sample_count
+    print('Model %d: precision @ 1 = %.3f' % (global_step, precision))
+    
+    # keep a conveinence file with the precision
+    precision_file = os.path.join(summary_dir, "precision_summary.txt")
+    with open(precision_file, 'a') as f:
+      print >> f, 'Model %d: precision @ 1 = %.3f' % (global_step, precision)
+    
+    if summary_writer != None:
+      summary = tf.Summary()
+      summary.ParseFromString(sess.run(summary_op))
+      summary.value.add(tag='Precision @ 1', simple_value=precision)
+      summary_writer.add_summary(summary, global_step)
 
   coord.request_stop()
   coord.join(threads)

@@ -1,3 +1,6 @@
+"""
+Train the network for classification.
+"""
 
 import os
 import time
@@ -6,17 +9,8 @@ import numpy as np
 import tensorflow as tf
 
 
-import v3
+import v3.classification_model as v3
 from inputs.construct import construct_network_input_nodes
-
-def _restore_net(checkpoint_dir):
-
-  ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-  if ckpt:
-    ckpt_file = ckpt.model_checkpoint_path
-    print "Found checkpoint: %s" % (ckpt_file,)
-
-  return ckpt
 
 def add_loss(graph, logits, labels_sparse, scale=None):
 
@@ -47,8 +41,8 @@ def add_loss(graph, logits, labels_sparse, scale=None):
 
 def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxiliary_variables=False):
 
-  USE_EXTRA_CLASSIFICATOIN_HEAD = True
-  USE_THIRD_CLASSIFICATION_HEAD = True
+  USE_EXTRA_CLASSIFICATOIN_HEAD = cfg.USE_EXTRA_CLASSIFICATOIN_HEAD
+  USE_THIRD_CLASSIFICATION_HEAD = cfg.USE_THIRD_CLASSIFICATION_HEAD
 
 
   graph = tf.get_default_graph()
@@ -76,7 +70,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   )
 
   # Inference Nodes
-  features = v3.build(graph, images, cfg.NUM_CLASSES, cfg)
+  features = v3.build(graph, images, cfg)
   
   if first_iteration:
     
@@ -160,7 +154,8 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   maintain_averages_op = ema.apply(
     tf.get_collection('conv_params') +
     tf.get_collection('batchnorm_params') +
-    tf.get_collection('softmax_params')
+    tf.get_collection('softmax_params') + 
+    tf.get_collection('batchnorm_mean_var')
   )
 
   # Create an op that will update the moving averages after each training
@@ -180,7 +175,10 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   )
 
   # Look to see if there is a checkpoint file
-  ckpt = _restore_net(save_dir)
+  ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+  if ckpt:
+    ckpt_file = ckpt.model_checkpoint_path
+    print "Found checkpoint: %s" % (ckpt_file,)
 
   # If this is the first iteration then restore the original inception weights
   if first_iteration:
