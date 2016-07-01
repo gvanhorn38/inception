@@ -10,7 +10,7 @@ import sys
 from config import parse_config_file
 import inputs
 
-def debug(tfrecord_path, prior_bboxes, config_path = None):
+def debug(tfrecord_path, config_path = None):
   
   tfrecords = [tfrecord_path]
   cfg = parse_config_file(config_path)
@@ -22,9 +22,8 @@ def debug(tfrecord_path, prior_bboxes, config_path = None):
   with sess.as_default(), graph.as_default():
 
     # Input Nodes
-    images, batched_bboxes, batched_num_bboxes, paths = inputs.input_nodes(
+    images, batched_bboxes, batched_num_bboxes, image_ids = inputs.input_nodes(
       tfrecords=tfrecords,
-      bbox_priors = prior_bboxes,
       max_num_bboxes = cfg.MAX_NUM_BBOXES,
       num_epochs=None,
       batch_size=cfg.BATCH_SIZE,
@@ -37,7 +36,8 @@ def debug(tfrecord_path, prior_bboxes, config_path = None):
     
     
     coord = tf.train.Coordinator()
-  
+    
+    plt.ion()
 
     tf.initialize_all_variables().run()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
@@ -46,7 +46,7 @@ def debug(tfrecord_path, prior_bboxes, config_path = None):
       
       output = sess.run([images, batched_bboxes])
       for image, bboxes in zip(output[0], output[1]):
-
+          
           plt.imshow((image * cfg.IMAGE_STD + cfg.IMAGE_MEAN).astype(np.uint8))
           
           # plot the ground truth bounding boxes
@@ -54,10 +54,12 @@ def debug(tfrecord_path, prior_bboxes, config_path = None):
             xmin, ymin, xmax, ymax = bbox * cfg.INPUT_SIZE
             plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'b-')
           
-          plt.show()
+          plt.show(block=False)
+          
           t = raw_input("push button")
           if t != '':
             done = True
-
+          plt.clf()
+          
 if __name__ == '__main__':
   debug(sys.argv[1], sys.argv[2])

@@ -1,3 +1,7 @@
+"""
+Extract a bounding box from each image.
+"""
+
 import numpy as np
 import tensorflow as tf
 
@@ -9,17 +13,17 @@ def extract_bbox(image, bbox, random_expand=False):
   image_height, image_width = image.shape[:2]
   
   # the bbox should be in normalized coordinates
-  x, y, w, h = bbox
-  bbox_x = int(image_width * x) 
-  bbox_y = int(image_height * y)
-  bbox_width = int(image_width * w)
-  bbox_height = int(image_height * h)
+  x1, y1, x2, y2 = bbox
+  x1 = int(image_width * x1) 
+  y1 = int(image_height * y1)
+  x2 = int(image_width * x2)
+  y2 = int(image_height * y2)
   
   # Basic protection
-  bbox_x = max(0, bbox_x)
-  bbox_y = max(0, bbox_y)
-  bbox_x2 = min(image_width, bbox_x + bbox_width)
-  bbox_y2 = min(image_height, bbox_y + bbox_height)
+  bbox_x = max(0, x1)
+  bbox_y = max(0, y1)
+  bbox_x2 = min(image_width, x2)
+  bbox_y2 = min(image_height, y2)
   
   if random_expand:
     
@@ -72,24 +76,40 @@ def input_nodes(
     features = tf.parse_single_example(
       serialized_example,
       features = {
-        'path'  : tf.FixedLenFeature([], tf.string),
-        'label' : tf.FixedLenFeature([], tf.int64),
-        'bbox'  : tf.FixedLenFeature([4], tf.float32), # Normalized Coordinates
-        'instance' : tf.FixedLenFeature([], tf.string)
+        'image/id' : tf.FixedLenFeature([], tf.string),
+        'image/encoded'  : tf.FixedLenFeature([], tf.string),
+        'image/object/bbox/xmin' : tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/ymin' : tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/xmax' : tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/ymax' : tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/label' : tf.VarLenFeature(dtype=tf.int64),
       }
     )
 
-  
-    path = features['path']
-    label = tf.cast(features['label'], tf.int32)
-    bbox = features['bbox'] # [x, y, width, height]
-    instance_id = features['instance']
-    
-    image = tf.read_file(path)
-    image = tf.image.decode_jpeg(image, channels=3)
+    image = tf.image.decode_jpeg(features['image/encoded'], channels=3)
     image = tf.cast(image, tf.float32)
-    label = tf.cast(features['label'], tf.int32)
-
+    image_id = features['image/id']
+    
+    xmin = tf.expand_dims(features['image/object/bbox/xmin'].values, 0)
+    ymin = tf.expand_dims(features['image/object/bbox/ymin'].values, 0)
+    xmax = tf.expand_dims(features['image/object/bbox/xmax'].values, 0)
+    ymax = tf.expand_dims(features['image/object/bbox/ymax'].values, 0)
+    label = tf.expand_dims(tf.cast(features['image/object/bbox/label'].values, tf.float32), 0)
+    
+    # combine the bounding boxes
+    bboxes = tf.concat(0, [xmin, ymin, xmax, ymax, label])
+    # order the bboxes so that they have the shape: [num_bboxes, bbox_coords]
+    bboxes = tf.transpose(bboxes, [1, 0])
+    # shuffle up the bboxes
+    shuffled_bboxes = tf.random_shuffle(bboxes)
+    # choose the first bounding box
+    selected_bbox = tf.gather(shuffled_bboxes, [0])
+    # split the bbox coords and the label
+    bbox, label = tf.dynamic_partition(tf.squeeze(selected_bbox), [0, 0, 0, 0, 1], 2)
+    bbox.set_shape([4])
+    label = tf.cast(tf.squeeze(label), tf.int32)
+    label.set_shape([])
+    
     if add_summaries:
       tf.image_summary('orig_image', tf.expand_dims(image, 0))
     
@@ -128,8 +148,8 @@ def input_nodes(
 
     # Place the images on another queue that will be sampled by the model
     if shuffle_batch:
-      images, sparse_labels, paths, instance_ids = tf.train.shuffle_batch(
-        [image, label, path, instance_id],
+      images, sparse_labels, image_ids = tf.train.shuffle_batch(
+        [image, label, path, image_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -139,8 +159,8 @@ def input_nodes(
       )
 
     else:
-      images, sparse_labels, paths, instance_ids = tf.train.batch(
-        [image, label, path, instance_id],
+      images, sparse_labels, image_ids = tf.train.batch(
+        [image, label, image_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -148,6 +168,6 @@ def input_nodes(
       )
 
   # return a batch of images and their labels
-  return images, sparse_labels, paths, instance_ids
+  return images, sparse_labels, image_ids
   
   

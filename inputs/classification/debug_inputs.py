@@ -16,7 +16,7 @@ def debug(tfrecord_path, config_path):
   cfg = parse_config_file(config_path)
 
   # Input Nodes
-  images, labels_sparse, paths, instance_ids = construct_network_input_nodes(
+  images, labels_sparse, instance_ids = construct_network_input_nodes(
     tfrecords=tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=None,

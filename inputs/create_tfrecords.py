@@ -97,6 +97,7 @@ def _convert_to_example(image_example, image_buffer, height, width):
       'image/object/bbox/ymin': _float_feature(ymin),
       'image/object/bbox/ymax': _float_feature(ymax),
       'image/object/bbox/label': _int64_feature(bbox_labels),
+      'image/object/bbox/count' : _int64_feature(len(xmin)),
       'image/format': _bytes_feature(image_format),
       'image/filename': _bytes_feature(os.path.basename(filename)),
       'image/id': _bytes_feature(str(id)),

@@ -57,7 +57,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   )
 
   # Input Nodes
-  images, labels_sparse, image_paths, instance_ids = construct_network_input_nodes(
+  images, labels_sparse, instance_ids = construct_network_input_nodes(
     tfrecords=tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=None,

@@ -51,17 +51,17 @@ def input_nodes(
     features = tf.parse_single_example(
       serialized_example,
       features = {
-        'path'  : tf.FixedLenFeature([], tf.string),
-        'label' : tf.FixedLenFeature([], tf.int64),
+        'image/id' : tf.FixedLenFeature([], tf.string),
+        'image/encoded'  : tf.FixedLenFeature([], tf.string),
+        'image/class/label' : tf.FixedLenFeature([], tf.int64)
       }
     )
 
-    path = features['path']
-    image = tf.read_file(path)
-    image = tf.image.decode_jpeg(image, channels=3)
+    image = tf.image.decode_jpeg(features['image/encoded'], channels=3)
     image = tf.cast(image, tf.float32)
-    label = tf.cast(features['label'], tf.int32)
-
+    label = tf.cast(features['image/class/label'], tf.int32)
+    image_id = features['image/id']
+    
     if add_summaries:
       tf.image_summary('orig_image', tf.expand_dims(image, 0))
 
@@ -86,8 +86,8 @@ def input_nodes(
 
     # Place the images on another queue that will be sampled by the model
     if shuffle_batch:
-      images, sparse_labels, paths = tf.train.shuffle_batch(
-        [image, label, path],
+      images, sparse_labels, image_ids = tf.train.shuffle_batch(
+        [image, label, image_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -97,8 +97,8 @@ def input_nodes(
       )
 
     else:
-      images, sparse_labels, paths = tf.train.batch(
-        [image, label, path],
+      images, sparse_labels, image_ids = tf.train.batch(
+        [image, label, image_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -106,4 +106,4 @@ def input_nodes(
       )
 
   # return a batch of images and their labels
-  return images, sparse_labels, paths, None
+  return images, sparse_labels, image_ids

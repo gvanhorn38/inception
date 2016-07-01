@@ -35,7 +35,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   )
 
   # Input Nodes
-  images, labels_sparse, image_paths, instance_ids = construct_network_input_nodes(tfrecords,
+  images, labels_sparse, instance_ids = construct_network_input_nodes(tfrecords,
     input_type=cfg.INPUT_TYPE,
     num_epochs=1,
     batch_size=cfg.BATCH_SIZE,
@@ -104,7 +104,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
 
   fetches = [top_k_op]
   if save_classification_results :
-    fetches += [image_paths, predicted_classes, logits, instance_ids, labels_sparse]
+    fetches += [predicted_classes, logits, instance_ids, labels_sparse]
 
   # keep a reference around
   classification_writer = None
@@ -152,17 +152,15 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
         dt = time.time()-t
 
         if save_classification_results:
-          batch_image_paths = outputs[1]
-          batch_pred_class_ids = outputs[2].astype(int)
-          batch_logits = outputs[3].astype(float)
-          batch_instance_ids = outputs[4]
-          batch_gt_class_ids = outputs[5].astype(int)
+          batch_pred_class_ids = outputs[1].astype(int)
+          batch_logits = outputs[2].astype(float)
+          batch_instance_ids = outputs[3]
+          batch_gt_class_ids = outputs[4].astype(int)
           
           for i in range(cfg.BATCH_SIZE):
             
             feature={}
             feature['label'] = _int64_feature([batch_gt_class_ids[i]])
-            feature['path'] = _bytes_feature([batch_image_paths[i]])
             feature['instance_id'] = _bytes_feature([batch_instance_ids[i]])
             feature['logits'] = _float_feature(batch_logits[i])
             feature['pred_label'] = _int64_feature(batch_pred_class_ids[i])

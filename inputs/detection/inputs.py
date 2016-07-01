@@ -196,22 +196,31 @@ def input_nodes(
     features = tf.parse_single_example(
       serialized_example,
       features = {
-        'path'  : tf.FixedLenFeature([], tf.string),
-        'bboxes'  : tf.VarLenFeature(tf.float32), # This is a flat list that will be grouped into 4s [x_min, y_min, x_max, y_max]
-        'num_bboxes' : tf.FixedLenFeature([], tf.int64)
+        'image/id' : tf.FixedLenFeature([], tf.string),
+        'image/encoded'  : tf.FixedLenFeature([], tf.string),
+        'image/object/bbox/xmin' : tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/ymin' : tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/xmax' : tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/ymax' : tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/count' : tf.FixedLenFeature([], tf.int64)
       }
     )
 
-  
-    path = features['path']
-    orig_bboxes = features['bboxes'] # Format: [x_min, y_min, x_max, y_max]
-    bboxes = tf.reshape(tf.sparse_tensor_to_dense(features['bboxes']), [-1, 4])
-    
-    num_bboxes = tf.cast(features['num_bboxes'], tf.int32)
-    
-    image = tf.read_file(path)
-    image = tf.image.decode_jpeg(image, channels=3)
+    image = tf.image.decode_jpeg(features['image/encoded'], channels=3)
     image = tf.cast(image, tf.float32)
+    image_id = features['image/id']
+    
+    xmin = tf.expand_dims(features['image/object/bbox/xmin'].values, 0)
+    ymin = tf.expand_dims(features['image/object/bbox/ymin'].values, 0)
+    xmax = tf.expand_dims(features['image/object/bbox/xmax'].values, 0)
+    ymax = tf.expand_dims(features['image/object/bbox/ymax'].values, 0)
+    
+    # combine the bounding boxes (the shape should be [bbox_coords, num_bboxes])
+    bboxes = tf.concat(0, [xmin, ymin, xmax, ymax])
+    # order the bboxes so that they have the shape: [num_bboxes, bbox_coords]
+    bboxes = tf.transpose(bboxes, [1, 0])
+    
+    num_bboxes = tf.cast(features['image/object/bbox/count'], tf.int32)
     
     
     if add_summaries:
@@ -263,8 +272,8 @@ def input_nodes(
     
     # Place the images on another queue that will be sampled by the model
     if shuffle_batch:
-      images, batched_bboxes, batched_num_bboxes, paths = tf.train.shuffle_batch(
-        [image, bboxes, num_bboxes, path],
+      images, batched_bboxes, batched_num_bboxes, image_ids = tf.train.shuffle_batch(
+        [image, bboxes, num_bboxes, image_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -274,8 +283,8 @@ def input_nodes(
       )
 
     else:
-      images, batched_bboxes, batched_num_bboxes, paths = tf.train.batch(
-        [image, bboxes, num_bboxes, path],
+      images, batched_bboxes, batched_num_bboxes, image_ids = tf.train.batch(
+        [image, bboxes, num_bboxes, image_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
@@ -283,4 +292,4 @@ def input_nodes(
       )
 
   # return a batch of images and their labels
-  return images, batched_bboxes, batched_num_bboxes, paths
+  return images, batched_bboxes, batched_num_bboxes, image_ids
