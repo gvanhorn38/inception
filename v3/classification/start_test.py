@@ -55,8 +55,8 @@ if __name__ == '__main__':
     print args
 
     cfg = parse_config_file(args.config_file)
-    # Modify the configuration hyper-parameters for test purposes. 
-    cfg.PHASE = "TEST"
+    
+    # We want to use the global statistics for testing
     cfg.USE_BATCH_STATISTICS = False
 
     print "Configurations:"

@@ -1,10 +1,13 @@
+"""
+This file implements the Inception Decemeber 2015 model. Its close to the 
+architecture described in 
+  http://arxiv.org/abs/1512.00567 
+but its not exact. 
+"""
+
 import tensorflow as tf
 
 from network_utils import add_avg_pool, add_max_pool, add_conv
-
-# Default Values
-# WD : weight decay (regularization term)
-
 
 # Figure 5 configuration
 # This isn't exactly figure 5. There is a 5x5 filter bank here.

@@ -1,3 +1,7 @@
+"""
+Customizes the Inception V3 model for classification. 
+"""
+
 import tensorflow as tf
 
 from network_utils import add_avg_pool, add_conv, add_fully_connected
@@ -66,6 +70,9 @@ def add_layers_for_third_classification_head(graph, input, cfg):
 
 
 def build(graph, inputs, cfg):
+  """
+  Build the inception model, and add a final layer of pooling. 
+  """
   
   base_features = model.build(graph, inputs, cfg)
   

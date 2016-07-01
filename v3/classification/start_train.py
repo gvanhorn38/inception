@@ -1,3 +1,7 @@
+"""
+Script to start the training routine. 
+"""
+
 import argparse
 import sys
 
@@ -44,8 +48,8 @@ if __name__ == '__main__':
     print args
 
     cfg = parse_config_file(args.config_file)
-    # Modify the configuration hyper-parameters for prep purposes.
-    cfg.PHASE = "TRAIN"
+    
+    # We want to use the batch statistics for training. 
     cfg.USE_BATCH_STATISTICS = True
 
     print "Configurations:"
