@@ -3,14 +3,8 @@
 The classification architecture is an implementation of http://arxiv.org/abs/1512.00567 
 
 ### Data Format
-The data needs to be in a tfrecords file with the following fields:
+The data needs to be in a tfrecords file(s). See the inputs [README](../../inputs/README.md) for more information.
 
-| Key | Value |
-|-----|------|
-|path | a full file path for the image|
-|label| an integer in in the range [0, the total number of classes)|
-
-You'll need at least 2 of these tfrecord files. One of them should contain your training data (train.tfrecords) and the other should contain testing data (test.tfrecords) 
 
 ### Directory Structure
 Setup a directory with the following contents
@@ -22,11 +16,11 @@ Setup a directory with the following contents
 - config.yaml : this is a configuration file.
 
 ### Configuration
-The configuration file is a yaml formatted file that specifies the hyperparameters of the model. See the example [configuration file](v3/classification/config.yaml.example). 
+The configuration file is a yaml formatted file that specifies the hyperparameters of the model. See the example [configuration file](config.yaml.example). 
 
 ### Training
 You can start the training process through the command line:
-```sh
+```shell
 python v3/classification/start_test.py \
 --tfrecords <path_to_directory>/train.tfrecords \
 --log_dir <path_to_directory>/ \
@@ -36,7 +30,7 @@ python v3/classification/start_test.py \
 
 ### Testing
 You can start the testing process through the command line:
-```sh
+```shell
 python v3/classification/start_test.py \
 --tfrecords <path_to_directory>/test.tfrecords \
 --checkpoint_dir <path_to_directory>/checkpoints \
