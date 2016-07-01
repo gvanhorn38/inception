@@ -74,7 +74,7 @@ def input_nodes(
       features = {
         'path'  : tf.FixedLenFeature([], tf.string),
         'label' : tf.FixedLenFeature([], tf.int64),
-        'bbox'  : tf.FixedLenFeature([4], tf.float32),
+        'bbox'  : tf.FixedLenFeature([4], tf.float32), # Normalized Coordinates
         'instance' : tf.FixedLenFeature([], tf.string)
       }
     )
@@ -114,13 +114,10 @@ def input_nodes(
         image = output[0]
         image.set_shape([cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
 
-        #image = image_augmentations.resize_image_preserve_aspect_ratio(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
-
       else:
         image.set_shape(tf.TensorShape([tf.Dimension(None), tf.Dimension(None), tf.Dimension(3)])) 
         image = tf.expand_dims(image, 0)
         image = tf.image.resize_bilinear(image, [cfg.INPUT_SIZE, cfg.INPUT_SIZE])
-        #image = tf.image.resize_images(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
         image = tf.squeeze(image, [0])
   
     if add_summaries:

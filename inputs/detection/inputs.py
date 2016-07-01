@@ -1,3 +1,7 @@
+"""
+Feed images and their bounding boxes into the network. 
+"""
+
 import numpy as np
 from scipy.misc import imresize
 import tensorflow as tf
@@ -25,13 +29,9 @@ def resize_image_maintain_aspect_ratio(image, target_height, target_width):
     image,
     (new_height, new_width)
   )
-
-  #output = np.zeros((target_height, target_width, 3), dtype=np.float32)
-  #output[:new_height, :new_width, :] = resized_image
   
   output = np.pad(resized_image, ((0, target_height - new_height), (0, target_width - new_width), (0, 0)), 'constant', constant_values=0).astype(np.float32)
   
-  #return [output, np.float32(height / new_height), np.float32(width / new_width)] 
   return [output, np.int32(new_height), np.int32(new_width)] 
 
 def augment_image_and_bboxes(image, orig_bboxes, do_random_flip, do_random_shift, max_shift, do_random_crop):
@@ -102,18 +102,6 @@ def augment_image_and_bboxes(image, orig_bboxes, do_random_flip, do_random_shift
       bottom_right_y_valid_positions = [max(0, y2 - max_radius_of_wiggle),
                                         min(y2 + max_radius_of_wiggle, image_height)]
       # Randomly choose a new point
-      
-      # if bottom_right_y_valid_positions[0] >= bottom_right_y_valid_positions[1]:
-      #   print "INVALID"
-      #   print "x1 [%d, %d]" % (top_left_x_valid_positions[0], top_left_x_valid_positions[1])
-      #   print "y1 [%d, %d]" % (top_left_y_valid_positions[0], top_left_y_valid_positions[1])
-      #   print "x2 [%d, %d]" % (bottom_right_x_valid_positions[0], bottom_right_x_valid_positions[1])
-      #   print "y2 [%d, %d]" % (bottom_right_y_valid_positions[0], bottom_right_y_valid_positions[1])
-      #   print y1
-      #   print y2
-      #   print image_height
-      #   sys.stdout.flush()
-      #  bottom_right_y_valid_positions[1] = bottom_right_y_valid_positions[0] + 1
       perturbed_x2 = np.random.randint(bottom_right_x_valid_positions[0], bottom_right_x_valid_positions[1]+1)
       perturbed_y2 = np.random.randint(bottom_right_y_valid_positions[0], bottom_right_y_valid_positions[1]+1)
       
@@ -218,7 +206,6 @@ def input_nodes(
     path = features['path']
     orig_bboxes = features['bboxes'] # Format: [x_min, y_min, x_max, y_max]
     bboxes = tf.reshape(tf.sparse_tensor_to_dense(features['bboxes']), [-1, 4])
-    #print "Bboxes shape: %s" % (bboxes.get_shape().as_list())
     
     num_bboxes = tf.cast(features['num_bboxes'], tf.int32)
     
@@ -247,8 +234,6 @@ def input_nodes(
     # We could have had the generation code do this.
     num_rows_to_pad = tf.maximum(0, max_num_bboxes - num_bboxes)
     bboxes = tf.pad(bboxes, tf.pack([tf.pack([0, num_rows_to_pad]), [0, 0]]))
-    #print "Bboxes shape: %s" % (bboxes.get_shape().as_list())
-
     
     if cfg.MAINTAIN_ASPECT_RATIO:
       # Resize the image up, then pad with 0s
@@ -275,7 +260,6 @@ def input_nodes(
     image /= cfg.IMAGE_STD
     
     bboxes.set_shape([max_num_bboxes, 4])
-    #print "Bboxes shape: %s" % (bboxes.get_shape().as_list())
     
     # Place the images on another queue that will be sampled by the model
     if shuffle_batch:

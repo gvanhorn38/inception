@@ -1,37 +1,6 @@
 import numpy as np
 from scipy.misc import imresize
 import tensorflow as tf
-
-
-# def resize_image_preserve_aspect_ratio(image, target_height, target_width):
-#   
-#   height, width, _ = image.get_shape().as_list()
-#   
-#   if height > width:
-#     new_height = target_height
-#     factor = new_height / height
-#     new_width = tf.to_int32(width * factor)
-#   else:
-#     new_width = target_width
-#     factor = new_width / width
-#     new_height = tf.to_int32(height * factor)
-#   
-#   image = tf.image.resize_images(
-#     image,
-#     new_height,
-#     new_width
-#   )
-# 
-#   image = tf.image.pad_to_bounding_box(
-#     image=image, 
-#     offset_height=0, 
-#     offset_width=0, 
-#     target_height=target_height, 
-#     target_width=target_width
-#   )
-#   
-#   return image
-  
   
 def resize_image_maintain_aspect_ratio(image, target_height, target_width):
   """

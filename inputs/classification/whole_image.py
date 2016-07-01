@@ -1,3 +1,7 @@
+"""
+Feed the whole image to the network.
+"""
+
 import tensorflow as tf
 
 import image_augmentations
@@ -70,8 +74,6 @@ def input_nodes(
         output = tf.py_func(image_augmentations.resize_image_maintain_aspect_ratio, params, [tf.float32], name="resize_maintain_aspect_ratio")
         image = output[0]
         image.set_shape([cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
-
-        #image = image_augmentations.resize_image_preserve_aspect_ratio(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
 
       else:
         image = tf.image.resize_images(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)

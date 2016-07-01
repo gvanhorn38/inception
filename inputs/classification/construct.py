@@ -1,3 +1,6 @@
+"""
+This is a wrapper file for bringing in the bounding box and whole image input pipelines.
+"""
 
 import bbox
 import whole_image
@@ -11,32 +14,10 @@ def construct_network_input_nodes(
     tfrecords, 
     input_type=WHOLE_IMAGE_INPUT, 
     **kwargs
-#     num_epochs=None, 
-#     batch_size=32, 
-#     num_threads=2,
-#     shuffle=True,
-#     add_summaries=True, 
-#     augment=True,
-#     cfg=None
   ):
 
   if input_type == WHOLE_IMAGE_INPUT:
-    return whole_image.input_nodes(
-      tfrecords=tfrecords, **kwargs
-      # augment=augment,
-#       num_epochs=num_epochs, 
-#       batch_size=batch_size, 
-#       num_threads=num_threads,
-#       shuffle = shuffle, 
-#       capacity = 128,
-#       min_after_dequeue = 96,
-#   
-#       # And tensorboard summaries of the images
-#       add_summaries=True, 
-#   
-#       # Global configuration
-#       cfg=None
-    )
+    return whole_image.input_nodes(tfrecords=tfrecords, **kwargs)
   elif input_type == BBOX_INPUT:
     return bbox.input_nodes(tfrecords=tfrecords, **kwargs)
   else:
