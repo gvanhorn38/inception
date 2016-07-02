@@ -1,8 +1,6 @@
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 import tensorflow as tf
-import sys
-sys.path.append('..')
 
 from network_utils import add_avg_pool, add_conv
 import v3.model as v3_model
@@ -322,12 +320,12 @@ def add_detection_heads(graph, inputs, num_bboxes_per_cell, batch_size, cfg):
       )
       detect_1_confidences = tf.reshape(detect_1_confidences, [batch_size, -1])
     
-    print detect_8_locations.get_shape().as_list()
-    print detect_6_locations.get_shape().as_list()
-    print detect_4_locations.get_shape().as_list()
-    print detect_3_locations.get_shape().as_list()
-    print detect_2_locations.get_shape().as_list()
-    print detect_1_locations.get_shape().as_list()
+    # print detect_8_locations.get_shape().as_list()
+    # print detect_6_locations.get_shape().as_list()
+    # print detect_4_locations.get_shape().as_list()
+    # print detect_3_locations.get_shape().as_list()
+    # print detect_2_locations.get_shape().as_list()
+    # print detect_1_locations.get_shape().as_list()
     
     # Collect all of the locations and confidences 
     locations = tf.concat(1, [detect_8_locations, detect_6_locations, detect_4_locations, detect_3_locations, detect_2_locations, detect_1_locations])
@@ -337,10 +335,10 @@ def add_detection_heads(graph, inputs, num_bboxes_per_cell, batch_size, cfg):
     confidences = tf.reshape(confidences, [batch_size, -1, 1])
     confidences = tf.sigmoid(confidences)
     
-    print "Location shape:"
-    print locations.get_shape().as_list()
-    print "Confidence shape:"
-    print confidences.get_shape().as_list()
+    # print "Location shape:"
+    # print locations.get_shape().as_list()
+    # print "Confidence shape:"
+    # print confidences.get_shape().as_list()
     
     # reshape the locations and confidences into a more convenient format
     #locations = tf.reshape(locations, [-1, 4])
@@ -366,11 +364,11 @@ def add_loss(graph, locations, confidences, batched_bboxes, batched_num_bboxes, 
     # add a small epsilon to the confidences
     confidences += small_epsilon
     
-    print "Shapes"
-    print locations.get_shape().as_list()
-    print confidences.get_shape().as_list()
-    print batched_bboxes.get_shape().as_list()
-    print batched_num_bboxes.get_shape().as_list()
+    # print "Shapes"
+    # print locations.get_shape().as_list()
+    # print confidences.get_shape().as_list()
+    # print batched_bboxes.get_shape().as_list()
+    # print batched_num_bboxes.get_shape().as_list()
     params = [locations, confidences, batched_bboxes, batched_num_bboxes, cfg.BATCH_SIZE, cfg.LOCATION_LOSS_ALPHA]
     matching, stacked_gt_bboxes = tf.py_func(compute_assignments, params, [tf.int32, tf.float32], name="bipartite_matching") 
     
