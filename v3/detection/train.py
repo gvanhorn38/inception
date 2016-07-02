@@ -6,9 +6,6 @@ import tensorflow as tf
 import model
 from inputs.detection.construct import construct_network_input_nodes
 
-sys.path.append('..')
-import v3.v3 as v3
-
 import os
 import time
 
