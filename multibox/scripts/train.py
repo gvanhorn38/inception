@@ -9,21 +9,26 @@ prior_bboxes = generate_priors()
 print "Number of Priors: %d" % (len(prior_bboxes),)
 
 # Birds
-# tfrecord_path = '/home/gvanhorn/Desktop/detection_trial_2/nabirds_detection_train.tfrecords'
-# cfg_path = "/home/gvanhorn/Desktop/detection_trial_2/config.yaml"
+tfrecord_path = '/home/gvanhorn/Desktop/detection_trial_2/nabirds_detection_train.tfrecords'
+cfg_path = "/home/gvanhorn/Desktop/detection_trial_2/config.yaml"
 # logdir = "/home/gvanhorn/Desktop/detection_trial_2"
 
 # Coco
-tfrecord_path = '/home/gvanhorn/Desktop/coco_detection_1/train.tfrecords'
-cfg_path = "/home/gvanhorn/Desktop/coco_detection_1/config.yaml"
-logdir = "/home/gvanhorn/Desktop/coco_detection_1"
+# tfrecord_path = '/home/gvanhorn/Desktop/coco_detection_1/train.tfrecords'
+# cfg_path = "/home/gvanhorn/Desktop/coco_detection_1/config.yaml"
+# logdir = "/home/gvanhorn/Desktop/coco_detection_1"
 
+# Newer version
+#tfrecord_path = '/home/gvanhorn/Desktop/birds_detection_dataset/train/train-00000-of-00020'
+#cfg_path = "/home/gvanhorn/Desktop/detection_trial_2/config.yaml"
+logdir = "/home/gvanhorn/Desktop/coco_detection_3/"
 
 import sys
 sys.path.append('..')
-from v3.config import parse_config_file
+#from v3.config import parse_config_file
+from config import parse_config_file
 
 cfg = parse_config_file(cfg_path)
 cfg.USE_BATCH_STATISTICS = True
 
-train.train([tfrecord_path], prior_bboxes, logdir, cfg, first_iteration=False)
+train.train([tfrecord_path], prior_bboxes, logdir, cfg, first_iteration=True)

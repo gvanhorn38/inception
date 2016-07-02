@@ -1,22 +1,9 @@
-from easydict import EasyDict
-import numpy as np
-import sys
+import os
 import tensorflow as tf
+import time
 
 import model
 from inputs.detection.construct import construct_network_input_nodes
-
-import os
-import time
-
-def _restore_net(checkpoint_dir):
-
-  ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-  if ckpt:
-    ckpt_file = ckpt.model_checkpoint_path
-    print "Found checkpoint: %s" % (ckpt_file,)
-
-  return ckpt
 
 def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
   
@@ -119,7 +106,10 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
     )
 
     # Look to see if there is a checkpoint file
-    ckpt = _restore_net(save_dir)
+    ckpt = tf.train.get_checkpoint_state(save_dir)
+    if ckpt:
+      ckpt_file = ckpt.model_checkpoint_path
+      print "Found checkpoint: %s" % (ckpt_file,)
 
     # If this is the first iteration then restore the original inception weights
     if first_iteration:
@@ -190,16 +180,7 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
         # increment the global step counter
         step = global_step.eval()
 
-        print print_str % (step, fetched[2], fetched[0], (dt / cfg.BATCH_SIZE) * 1000)
-        
-        if False:
-          confs = fetched[3][0]
-          print "Conf stats: Min: %0.3f\tMax: %0.3f\tMean: %0.3f\tMedian: %0.3f\tArgMax: %d" % (np.min(confs), np.max(confs), np.mean(confs), np.median(confs), np.argmax(confs))
-          matches = fetched[4][:len(bbox_priors)]
-          print "Matched: %d" % (np.argmax(matches),)
-          print "GT Match: %d" % fetched[7][0]
-          print "Loss : %0.5f + %0.5f = %0.5f" % (fetched[5], fetched[6], fetched[0])
-          print   
+        print print_str % (step, fetched[2], fetched[0], (dt / cfg.BATCH_SIZE) * 1000)  
          
         if (step % 50) == 0:
           print "writing summary"

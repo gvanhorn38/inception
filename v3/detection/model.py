@@ -5,7 +5,7 @@ import sys
 sys.path.append('..')
 
 from network_utils import add_avg_pool, add_conv
-import v3.model as model
+import v3.model as v3_model
 
 small_epsilon = 1e-10
 
@@ -400,4 +400,4 @@ def add_loss(graph, locations, confidences, batched_bboxes, batched_num_bboxes, 
 
 def build(graph, inputs, cfg):
   
-  return model.build(graph, inputs, cfg)
+  return v3_model.build(graph, inputs, cfg)

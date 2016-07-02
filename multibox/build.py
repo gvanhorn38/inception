@@ -4,6 +4,7 @@ import tensorflow as tf
 import sys
 sys.path.append('..')
 import v3.v3 as v3
+#import network_utils as v3
 
 small_epsilon = 1e-10
 

@@ -8,6 +8,9 @@ from inputs import input_nodes
 
 sys.path.append('..')
 import v3.v3 as v3
+#import v3.model as v3
+
+#from inputs.detection.inputs import input_nodes
 
 import os
 import time
@@ -52,6 +55,7 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
       cfg=cfg
     )
     features = v3.build(graph, images, None, cfg)
+    #features = v3.build(graph, images, cfg)
     
     if first_iteration: 
       # conv kernels, gamma and beta for batch normalization
