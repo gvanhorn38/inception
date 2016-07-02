@@ -34,7 +34,7 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
   
   with graph.as_default(), session.as_default():
     
-    images, batched_bboxes, batched_num_bboxes, paths = construct_network_input_nodes(
+    images, batched_bboxes, batched_num_bboxes, image_ids = construct_network_input_nodes(
       tfrecords=tfrecords,
       max_num_bboxes=cfg.MAX_NUM_BBOXES,
       num_epochs=None,
