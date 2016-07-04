@@ -1,5 +1,5 @@
 import argparse
-import pickle
+import pprint
 import sys
 
 from config import parse_config_file
@@ -52,7 +52,7 @@ if __name__ == '__main__':
 
     args = parse_args()
     print "Called with:"
-    print args
+    print pprint.pprint(args)
 
     cfg = parse_config_file(args.config_file)
     
@@ -60,7 +60,7 @@ if __name__ == '__main__':
     cfg.USE_BATCH_STATISTICS = False
 
     print "Configurations:"
-    print cfg
+    print pprint.pprint(cfg)
 
     test.test(
       tfrecords=args.tfrecords,

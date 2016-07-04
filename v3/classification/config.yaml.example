@@ -2,10 +2,15 @@
 
 RANDOM_SEED : 1.0
 
+# Limit the amount of memory reserved for this network
 SESSION_CONFIG : {
-  PER_PROCESS_GPU_MEMORY_FRACTION : 0.9
+  PER_PROCESS_GPU_MEMORY_FRACTION : 0.9 
 }
 
+# Should the base network be held fixed? If so, then we only train the top level variables.
+FIXED_BASE : false
+
+# Number of classes for this task
 NUM_CLASSES : 200
 
 # Image Processing 

@@ -1,33 +1,38 @@
-import cPickle as pickle
+import numpy as np
 import os
 import sys
-import time
-
-
-import numpy as np
 import tensorflow as tf
+import time
 
 import v3.classification.model as model
 from inputs.classification.construct import construct_network_input_nodes
 from network_utils import add_logits 
+from proto_utils import _int64_feature, _float_feature, _bytes_feature
 
-def _float_feature(value):
-  return tf.train.Feature(float_list=tf.train.FloatList(value=value))
-
-def _int64_feature(value):
-  return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
-
-def _bytes_feature(value):
-  return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
-
-
-def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, save_classification_results=False, max_iterations=None):
-
+def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
+  save_classification_results=False, max_iterations=None):
+  """
+  Test an Inception V3 network.
+  
+  Args:
+    tfrecords (List): an array of file paths to tfrecord protocol buffer files.
+    checkpoint_dir (str): a file path to a directory containing model checkpoint files. The 
+      newest model will be used.
+    specific_model_path (str): a file path to a specific model file. This argument has 
+      precedence over `checkpoint_dir`.
+    cfg: an EasyDict of configuration parameters.
+    summary_dir (str): if specified, the tensorboard summary files will be writen to this 
+      directory.
+    save_classification_results (bool): if True, then the code will create a tfrecords 
+      file containing the logits and predicted class for each image. 
+    max_iterations (int): The maximum number of batches to execute. Leave as None to go
+      through the all records.
+  """  
+  
   graph = tf.get_default_graph()
 
   sess_config = tf.ConfigProto(
     log_device_placement=False,
-    #device_filters = device_filters,
     allow_soft_placement = True,
     gpu_options = tf.GPUOptions(
         per_process_gpu_memory_fraction=cfg.SESSION_CONFIG.PER_PROCESS_GPU_MEMORY_FRACTION
@@ -37,11 +42,11 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   # Input Nodes
   images, labels_sparse, instance_ids = construct_network_input_nodes(tfrecords,
     input_type=cfg.INPUT_TYPE,
-    num_epochs=1,
+    num_epochs=1, # Go through all of the records once.
     batch_size=cfg.BATCH_SIZE,
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = False,
-    augment=False,
+    augment=cfg.AUGMENT_IMAGE,
     shuffle_batch=False,
     cfg=cfg
   )
@@ -51,8 +56,9 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
 
   logits = add_logits(graph, features, cfg.NUM_CLASSES)
 
-  top_k_op = tf.nn.in_top_k(logits, labels_sparse, 1)
-
+  top_1_op = tf.nn.in_top_k(logits, labels_sparse, 1)
+  top_5_op = tf.nn.in_top_k(logits, labels_sparse, 5)
+  
   if save_classification_results:
     class_scores, predicted_classes = tf.nn.top_k(logits)
 
@@ -100,14 +106,17 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
     'Time/image (ms): %.1f'
   ])
 
-  
-
-  fetches = [top_k_op]
+  fetches = [top_1_op, top_5_op]
+  fetch_indices = {
+    'top_1_op' : 0,
+    'top_5_op' : 1,
+  }
   if save_classification_results :
     fetches += [predicted_classes, logits, instance_ids, labels_sparse]
-
-  # keep a reference around
-  classification_writer = None
+    fetch_indices['predicted_classes'] = 2
+    fetch_indices['logits'] = 3
+    fetch_indices['instance_ids'] = 4
+    fetch_indices['labels_sparse'] = 5
 
   # Restore a checkpoint file
   with tf.Session(config=sess_config) as sess:
@@ -134,12 +143,14 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
       print "Found model for global step: %d" % (global_step,)
       
       # Save the actually classifications for later processing
+      classification_writer = None
       if save_classification_results: 
         # create a writer for storing the tfrecords
         output_path = os.path.join(summary_dir, 'classification_results-%d.tfrecords' % (global_step,))
         classification_writer = tf.python_io.TFRecordWriter(output_path)
       
       true_count = 0.0  # Counts the number of correct predictions.
+      in_top_5_count = 0.0 # Counts the number of predictions that are in the top 5
       total_sample_count = 0
       step = 0
       while not coord.should_stop():
@@ -152,10 +163,10 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
         dt = time.time()-t
 
         if save_classification_results:
-          batch_pred_class_ids = outputs[1].astype(int)
-          batch_logits = outputs[2].astype(float)
-          batch_instance_ids = outputs[3]
-          batch_gt_class_ids = outputs[4].astype(int)
+          batch_pred_class_ids = outputs[fetch_indices['predicted_classes']].astype(int)
+          batch_logits = outputs[fetch_indices['logits']].astype(float)
+          batch_instance_ids = outputs[fetch_indices['instance_ids']]
+          batch_gt_class_ids = outputs[fetch_indices['labels_sparse']].astype(int)
           
           for i in range(cfg.BATCH_SIZE):
             
@@ -170,9 +181,12 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
             classification_writer.write(example.SerializeToString())
             
 
-        predictions = outputs[0]
+        predictions = outputs[fetch_indices['top_1_op']]
         true_count += np.sum(predictions)
-
+        
+        predictions_at_5 = outputs[fetch_indices['top_5_op']]
+        in_top_5_count += np.sum(precision_at_5)
+        
         print print_str % (
           step,
           true_count,
@@ -187,19 +201,17 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
     except tf.errors.OutOfRangeError as e:
       pass
 
-    #except Exception as e:
-    #  print e
-    #  coord.request_stop(e)
-
     if save_classification_results:
       # close the writer
       classification_writer.close()
 
-    # Compute precision @ 1.
-    precision = true_count / total_sample_count
-    print('Model %d: precision @ 1 = %.3f' % (global_step, precision))
+    # Compute precision @ 1 and @5.
+    precision_at_1 = true_count / total_sample_count
+    precision_at_5 = in_top_5_count / total_sample_count
+    print('Model %d: precision @ 1 = %.3f' % (global_step, precision_at_1))
+    print('          precision @ 5 = %.3f' % (global_step, precision_at_5))
     
-    # keep a conveinence file with the precision
+    # keep a conveinence file with the precision (append to an existing file)
     if summary_dir != None:
       precision_file = os.path.join(summary_dir, "precision_summary.txt")
       with open(precision_file, 'a') as f:
@@ -209,6 +221,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
       summary = tf.Summary()
       summary.ParseFromString(sess.run(summary_op))
       summary.value.add(tag='Precision @ 1', simple_value=precision)
+      summary.value.add(tag='Precision @ 5', simple_value=precision_at_5)
       summary_writer.add_summary(summary, global_step)
 
   coord.request_stop()

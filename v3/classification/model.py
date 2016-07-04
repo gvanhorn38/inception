@@ -72,12 +72,16 @@ def add_layers_for_third_classification_head(graph, input, cfg):
 def build(graph, inputs, cfg):
   """
   Build the inception model, and add a final layer of pooling. 
+  
+  Args:
+    graph: the graph to add the operations to. 
+    inputs: the input tensor, shape : [batch_size, height, width, dims]
+    cfg: EasyDict with configuration params
   """
   
   base_features = model.build(graph, inputs, cfg)
   
-  # Note that pool_2 was probably on an "alternate head"
-  # pool_3
+  # Pool the features from the last inception layer
   pool_3 = add_avg_pool(
     graph=graph,
     input=base_features,
@@ -87,8 +91,8 @@ def build(graph, inputs, cfg):
     name="pool_3"
   )
 
+  # reshape to the final feature dimension. 
   features = tf.reshape(pool_3, [-1, 2048], name='features')
-  
   
   return features
   

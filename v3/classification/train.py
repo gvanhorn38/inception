@@ -12,25 +12,38 @@ from network_utils import add_logits
 import v3.classification.model as model
 from inputs.classification.construct import construct_network_input_nodes
 
-def add_loss(graph, logits, labels_sparse, scale=None):
-
+def add_loss(graph, logits, labels_sparse, scale=1.0):
+  """
+  Add the loss layers to the network.
+  
+  Args:
+    graph: the graph to add the operations to. 
+    logits: unscaled log probabilities, must have shape = [batch_size, num_classes]
+    labels_sparse: Each entry labels_sparse[i] must be an index in [0, num_classes). 
+      Other values will result in a loss of 0, but incorrect gradient computations.
+    scale: A multiplicative factor for the loss. 
+  """
+  
   with graph.name_scope('loss'):
     batch_size, num_classes = logits.get_shape().as_list()
-
-    labels_dense = tf.sparse_to_dense(
-      sparse_indices = tf.transpose(
-        tf.pack([tf.range(batch_size), labels_sparse])
-      ),
-      output_shape = [batch_size, num_classes],
-      sparse_values = np.ones(batch_size, dtype='float32')
-    )
-
-    loss = tf.nn.softmax_cross_entropy_with_logits(logits, labels_dense)
-
+    
+    # Convert the sparse labels to a dense matrix
+    # labels_dense = tf.sparse_to_dense(
+#       sparse_indices = tf.transpose(
+#         tf.pack([tf.range(batch_size), labels_sparse])
+#       ),
+#       output_shape = [batch_size, num_classes],
+#       sparse_values = np.ones(batch_size, dtype='float32')
+#     )
+#     loss = tf.nn.softmax_cross_entropy_with_logits(logits, labels_dense)
+    
+    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, sparse_labels)
+    
+    # mean across the batch
     loss = tf.reduce_mean(loss, name='loss')
-
-    if scale != None:
-      loss = tf.mul(loss, scale)
+    
+    # scale the loss
+    loss = tf.mul(loss, scale)
 
     tf.add_to_collection('losses', loss)
 
@@ -40,16 +53,24 @@ def add_loss(graph, logits, labels_sparse, scale=None):
   #return tf.add_n(tf.get_collection('losses'), name='total_loss')
 
 def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxiliary_variables=False):
-
-  USE_EXTRA_CLASSIFICATION_HEAD = cfg.USE_EXTRA_CLASSIFICATION_HEAD
-  USE_THIRD_CLASSIFICATION_HEAD = cfg.USE_THIRD_CLASSIFICATION_HEAD
-
-
+  """
+  Driver function for training the network.
+  
+  Args:
+    tfrecords: an array of file paths to tfrecord protocol buffer files
+    logdir: a file path to a directory to store data and information for the training 
+      procedure
+    cfg: an EasyDict with configuration parameters.
+    first_iteration (bool): If this is the first iteration of the training procedure than 
+      take care to restore only certain variables.
+    restore_initial_auxiliary_variables (bool): If the base network was saved with the 
+      auxillary classification heads, then restore those variables too. 
+  """
+  
   graph = tf.get_default_graph()
 
   sess_config = tf.ConfigProto(
     log_device_placement=False,
-    #device_filters = device_filters,
     allow_soft_placement = True,
     gpu_options = tf.GPUOptions(
         per_process_gpu_memory_fraction=cfg.SESSION_CONFIG.PER_PROCESS_GPU_MEMORY_FRACTION
@@ -60,7 +81,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   images, labels_sparse, instance_ids = construct_network_input_nodes(
     tfrecords=tfrecords,
     input_type=cfg.INPUT_TYPE,
-    num_epochs=None,
+    num_epochs=None,  # Just keep going through the data
     batch_size=cfg.BATCH_SIZE,
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = True,
@@ -76,11 +97,11 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
     
     # Create the auxiliary classification nodes and restore the variables
     if restore_initial_auxiliary_variables:
-      if USE_EXTRA_CLASSIFICATION_HEAD:
+      if cfg.USE_EXTRA_CLASSIFICATION_HEAD:
         mixed_7_output = graph.get_tensor_by_name('mixed_7/join:0')
         second_head_features = model.add_layers_for_second_classification_head(graph, mixed_7_output, cfg)
       
-      if USE_THIRD_CLASSIFICATION_HEAD:
+      if cfg.USE_THIRD_CLASSIFICATION_HEAD:
         mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
         third_head_features = model.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
     
@@ -93,8 +114,8 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   # Loss Nodes
   primary_loss = add_loss(graph, logits, labels_sparse)
 
-   # We need to add the extra classification head here.
-  if USE_EXTRA_CLASSIFICATION_HEAD:
+  # Add in the auxiliary classification heds
+  if cfg.USE_EXTRA_CLASSIFICATION_HEAD:
     # Create the auxiliary classification nodes if its not the first iteration, or if we don't want to restore them from a previous model
     if not first_iteration or not restore_initial_auxiliary_variables:
       mixed_7_output = graph.get_tensor_by_name('mixed_7/join:0')
@@ -102,7 +123,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
     second_head_logits = add_logits(graph, second_head_features, cfg.NUM_CLASSES)
     second_head_loss = add_loss(graph, second_head_logits, labels_sparse, 0.3)
 
-  if USE_THIRD_CLASSIFICATION_HEAD:
+  if cfg.USE_THIRD_CLASSIFICATION_HEAD:
     # Create the auxiliary classification nodes if its not the first iteration, or if we don't want to restore them from a previous model
     if not first_iteration or not restore_initial_auxiliary_variables:
       mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
@@ -114,10 +135,6 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   # sum of the cross entropy loss and the l2 norm weight loss
   total_loss =  tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-  # Print out the basic input -> inference -> loss operations for the graph
-  #for op in tf.get_default_graph().get_operations():
-#      print op.type.ljust(35), '\t', op.name
-
   # Create a global counter (to be incremented by the optimizer)
   global_step = tf.Variable(0, name='global_step', trainable=False)
 
@@ -128,7 +145,13 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
     decay_rate=cfg.LEARNING_RATE_DECAY,
     staircase=cfg.LEARNING_RATE_STAIRCASE
   )
-
+  
+  # Which variables are trainable? 
+  if cfg.FIXED_BASE:
+    var_list = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) if v not in original_inception_vars]
+  else:
+    var_list = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)]
+  
   # Create the optimizer
   optimizer = tf.train.RMSPropOptimizer(
     learning_rate = learning_rate,
@@ -162,12 +185,14 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   # step.  This is what we will use in place of the usual training op.
   with tf.control_dependencies([optimize_op]):
     training_op = tf.group(maintain_averages_op)
-
+  
+  # Make sure the that there is a `checkpoints` directory
   save_dir = os.path.join(logdir, 'checkpoints')
   if not os.path.exists(save_dir):
     os.makedirs(save_dir)
   print "Storing checkpoint files in %s" % (save_dir,)
- # Create a saver to snapshot the model
+  
+  # Create a saver to snapshot the model
   saver = tf.train.Saver(
     # Save all variables
     max_to_keep = 3,
@@ -175,7 +200,6 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   )
 
   # Look to see if there is a checkpoint file
-  
   ckpt = tf.train.get_checkpoint_state(save_dir)
   if ckpt:
     ckpt_file = ckpt.model_checkpoint_path
@@ -191,9 +215,9 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   tf.histogram_summary(features.op.name, features)
   tf.histogram_summary(logits.op.name, logits)
   tf.scalar_summary('primary_loss', primary_loss)
-  if USE_EXTRA_CLASSIFICATION_HEAD:
+  if cfg.USE_EXTRA_CLASSIFICATION_HEAD:
       tf.scalar_summary('secondary_loss', second_head_loss)
-  if USE_THIRD_CLASSIFICATION_HEAD:
+  if cfg.USE_THIRD_CLASSIFICATION_HEAD:
       tf.scalar_summary('tertiary_loss', third_head_loss)
   tf.scalar_summary(total_loss.op.name, total_loss)
   tf.scalar_summary(learning_rate.op.name, learning_rate)
@@ -219,9 +243,9 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
 
   # Have the session run and evaluate the following ops / tensors:
   fetches = [total_loss, training_op, primary_loss]
-  if USE_EXTRA_CLASSIFICATION_HEAD:
+  if cfg.USE_EXTRA_CLASSIFICATION_HEAD:
     fetches.append(second_head_loss)
-  if USE_THIRD_CLASSIFICATION_HEAD:
+  if cfg.USE_THIRD_CLASSIFICATION_HEAD:
     fetches.append(third_head_loss)
 
   # Print some information to the command line on each run
@@ -262,9 +286,9 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
 
         print print_str % (step, fetched[0], (dt / cfg.BATCH_SIZE) * 1000)
         print "Primary loss: %0.3f" % (fetched[2],)
-        if USE_EXTRA_CLASSIFICATION_HEAD:
+        if cfg.USE_EXTRA_CLASSIFICATION_HEAD:
           print "Secondary loss: %0.3f" % (fetched[3],)
-        if USE_THIRD_CLASSIFICATION_HEAD:
+        if cfg.USE_THIRD_CLASSIFICATION_HEAD:
           print "Tertiary loss: %0.3f" % (fetched[4],)
 
         if (step % 50) == 0:

@@ -3,7 +3,9 @@ Script to start the training routine.
 """
 
 import argparse
+import pprint
 import sys
+
 
 from config import parse_config_file
 from train import train
@@ -45,7 +47,7 @@ if __name__ == '__main__':
 
     args = parse_args()
     print "Called with:"
-    print args
+    print pprint.pprint(args)
 
     cfg = parse_config_file(args.config_file)
     
@@ -53,7 +55,7 @@ if __name__ == '__main__':
     cfg.USE_BATCH_STATISTICS = True
 
     print "Configurations:"
-    print cfg
+    print pprint.pprint(cfg)
 
     train(
       tfrecords=args.tfrecords,

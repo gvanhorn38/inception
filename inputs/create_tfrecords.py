@@ -26,25 +26,7 @@ import sys
 import tensorflow as tf
 import threading
 
-
-def _int64_feature(value):
-  """Wrapper for inserting int64 features into Example proto."""
-  if not isinstance(value, list):
-    value = [value]
-  return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
-
-
-def _float_feature(value):
-  """Wrapper for inserting float features into Example proto."""
-  if not isinstance(value, list):
-    value = [value]
-  return tf.train.Feature(float_list=tf.train.FloatList(value=value))
-
-
-def _bytes_feature(value):
-  """Wrapper for inserting bytes features into Example proto."""
-  return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
+from proto_utils import _int64_feature, _float_feature, _bytes_feature
 
 def _convert_to_example(image_example, image_buffer, height, width):
   """Build an Example proto for an example.

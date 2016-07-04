@@ -221,3 +221,8 @@ def add_logits(graph, features, num_classes, wd=SOFTMAX_WD):
     softmax_linear = tf.nn.xw_plus_b(features, weights, biases, name="logits")
 
   return softmax_linear
+
+def print_operations(graph):
+  # Print out the basic input -> inference -> loss operations for the graph
+  for op in graph.get_operations():
+      print op.type.ljust(35), '\t', op.name
