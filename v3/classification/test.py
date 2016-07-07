@@ -26,7 +26,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
     save_classification_results (bool): if True, then the code will create a tfrecords 
       file containing the logits and predicted class for each image. 
     max_iterations (int): The maximum number of batches to execute. Leave as None to go
-      through the all records.
+      through all records.
   """  
   
   graph = tf.get_default_graph()
