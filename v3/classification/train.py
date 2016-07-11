@@ -87,6 +87,8 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
     add_summaries = True,
     augment=cfg.AUGMENT_IMAGE,
     shuffle_batch=True,
+    capacity = cfg.QUEUE_CAPACITY,
+    min_after_dequeue = cfg.QUEUE_MIN,
     cfg=cfg
   )
 

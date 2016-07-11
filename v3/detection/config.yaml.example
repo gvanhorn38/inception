@@ -26,6 +26,8 @@ IMAGE_AUGMENTATIONS : {
 # Input queues to the model
 NUM_INPUT_THREADS : 2
 BATCH_SIZE : 32
+QUEUE_CAPACITY : 1000
+QUEUE_MIN : 100
 
 NUM_TRAIN_ITERATIONS : 50000
 # The number of batch iterations used to compute the global mean and variance
