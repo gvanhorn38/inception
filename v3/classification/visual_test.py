@@ -127,11 +127,8 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg):
           t = raw_input("push button")
           if t != '':
             done=True
-            break
+            break # break out of the batch
           plt.clf()
-          
-        step += 1
-        total_sample_count += cfg.BATCH_SIZE
 
     except tf.errors.OutOfRangeError as e:
       pass
