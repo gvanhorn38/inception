@@ -37,7 +37,7 @@ def add_loss(graph, logits, labels_sparse, scale=1.0):
 #     )
 #     loss = tf.nn.softmax_cross_entropy_with_logits(logits, labels_dense)
     
-    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, sparse_labels)
+    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels_sparse)
     
     # mean across the batch
     loss = tf.reduce_mean(loss, name='loss')
