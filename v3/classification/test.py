@@ -185,7 +185,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
         true_count += np.sum(predictions)
         
         predictions_at_5 = outputs[fetch_indices['top_5_op']]
-        in_top_5_count += np.sum(precision_at_5)
+        in_top_5_count += np.sum(predictions_at_5)
         
         print print_str % (
           step,
