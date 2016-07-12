@@ -55,9 +55,9 @@ The configuration file is a yaml formatted file that specifies the hyperparamete
 ### Training
 You can start the training process through the command line:
 ```shell
-python v3/classification/start_test.py \
+python v3/classification/start_train.py \
 --tfrecords <path_to_directory>/train.tfrecords \
---log_dir <path_to_directory>/ \
+--logdir <path_to_directory>/ \
 --config <path_to_directory>/config.yaml \
 --first_iteration
 ```
