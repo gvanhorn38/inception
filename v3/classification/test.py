@@ -209,7 +209,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
     precision_at_1 = true_count / total_sample_count
     precision_at_5 = in_top_5_count / total_sample_count
     print('Model %d: precision @ 1 = %.3f' % (global_step, precision_at_1))
-    print('          precision @ 5 = %.3f' % (global_step, precision_at_5))
+    print('          precision @ 5 = %.3f' % (precision_at_5, ))
     
     # keep a conveinence file with the precision (append to an existing file)
     if summary_dir != None:
