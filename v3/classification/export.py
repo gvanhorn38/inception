@@ -1,7 +1,18 @@
 """
 Export the classification model for use with TensorFlow Serving.
-This assumes that you have installed the TensorFlow Serving python module.
+
+To use this script, the tensorflow.contrib.session_bundle.exporter module needs to 
+be able to import the manifest.proto protocol buffer. Currently, this protocol buffer is
+not available unless you compile it yourself:
+
+PYTHON = <path to your python installation>
+SERVING = <path to your TensorFlow Serving github repo directory>
+cd $PYTHON/site-packages/tensorflow/contrib/session_bundle
+protoc -I=$SERVING/tensorflow/tensorflow/contrib/session_bundle \
+--python_out='.' $SERVING/tensorflow/tensorflow/contrib/session_bundle/manifest.proto
+
 """
+
 import argparse
 from matplotlib import pyplot as plt
 import os
@@ -25,28 +36,28 @@ def export(model_path, export_path, export_version, cfg):
     )
   )
   
-  # GVH: This needs to be moved into the inputs module
-  #images = tf.placeholder(tf.float32, [None, None, None, 3], name="images")
+  # GVH: This is a little tricky. 
+  #   tf.image.decode_jpeg does not have a batch implementation, creating a bottleneck
+  #   for batching. We can request the user to send in a raveled image, but this will 
+  #   increase our transport size over the network. Also, should we assume that the images
+  #   have been completely preprocessed by the user? (mean subtracted, scaled by std, etc?)
   
-  # Input transformation.
-  # TODO(b/27776734): Add batching support.
-  jpegs = tf.placeholder(tf.string, shape=(1))
-  image_buffer = tf.squeeze(jpegs, [0])
-  # Decode the string as an RGB JPEG.
-  # Note that the resulting image contains an unknown height and width
-  # that is set dynamically by decode_jpeg. In other words, the height
-  # and width of image is unknown at compile-time.
-  image = tf.image.decode_jpeg(image_buffer, channels=3)
-  # After this point, all image pixels reside in [0,1)
-  # until the very end, when they're rescaled to (-1, 1).  The various
-  # adjust_* ops all require this range for dtype float.
-  #image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-  image = tf.cast(image, tf.float32)
-  images = tf.expand_dims(image, 0)
+  # GVH: We could just make this a switch and let the user decide what to do.
   
-  images = tf.image.resize_images(images, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
-  images -= cfg.IMAGE_MEAN
-  images /= cfg.IMAGE_STD
+  # JPEG bytes:
+#   jpegs = tf.placeholder(tf.string, shape=(1))
+#   image_buffer = tf.squeeze(jpegs, [0])
+#   image = tf.image.decode_jpeg(image_buffer, channels=3)
+#   image = tf.cast(image, tf.float32)
+#   images = tf.expand_dims(image, 0)
+#   images = tf.image.resize_images(images, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
+#   images -= cfg.IMAGE_MEAN
+#   images /= cfg.IMAGE_STD
+  
+  # For now we'll assume that the user is sending us a raveled array, totally preprocessed. 
+  images = tf.placeholder(tf.float32, [None, cfg.INPUT_SIZE * cfg.INPUT_SIZE * 3], name="images")
+  images = tf.reshape(images, [-1, cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
+  
   
   features = model.build(graph, images, cfg)
   logits = add_logits(graph, features, cfg.NUM_CLASSES)
