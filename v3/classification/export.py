@@ -55,8 +55,8 @@ def export(model_path, export_path, export_version, cfg):
 #   images /= cfg.IMAGE_STD
   
   # For now we'll assume that the user is sending us a raveled array, totally preprocessed. 
-  images = tf.placeholder(tf.float32, [None, cfg.INPUT_SIZE * cfg.INPUT_SIZE * 3], name="images")
-  images = tf.reshape(images, [-1, cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
+  image_data = tf.placeholder(tf.float32, [None, cfg.INPUT_SIZE * cfg.INPUT_SIZE * 3], name="images")
+  images = tf.reshape(image_data, [-1, cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
   
   
   features = model.build(graph, images, cfg)
@@ -92,12 +92,13 @@ def export(model_path, export_path, export_version, cfg):
 
     export_saver = tf.train.Saver(sharded=True)
     model_exporter = exporter.Exporter(export_saver)
-    signature = exporter.classification_signature(input_tensor=jpegs, scores_tensor=class_scores, classes_tensor=predicted_classes)
+    signature = exporter.classification_signature(input_tensor=image_data, scores_tensor=class_scores, classes_tensor=predicted_classes)
     model_exporter.init(sess.graph.as_graph_def(),
                         default_graph_signature=signature)
     model_exporter.export(export_path, tf.constant(export_version), sess)
     
     # TODO: Change to debug flag
+    # GVH: This doesn't work if we assume raw float data being passed in.
     if False:
       plt.ion()
       while True:
