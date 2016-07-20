@@ -9,6 +9,28 @@ from inputs.classification.construct import construct_network_input_nodes
 from network_utils import add_logits 
 from proto_utils import _int64_feature, _float_feature, _bytes_feature
 
+def _convert_to_classification_example(image_id, gt_label, pred_label, logits):
+  """
+  Construct an example TFRecord with the classification results. 
+  
+  Args:
+    image_id (str) : The id for the image.
+    gt_label (int) : The ground truth label for the image.
+    pred_label (int) : The predicted label for the image.
+    logits ([float]) : The log likelihoods of the classses. 
+  """
+  
+  example = tf.train.Example(
+    features=tf.train.Features(feature={
+      'image/pred/class/logits' : _float_feature(logits),
+      'image/pred/class/label' :  _int64_feature(pred_label),
+      'image/class/label': _int64_feature(gt_label),
+      'image/id': _bytes_feature(str(id))
+    })
+  )
+      
+  return example
+
 def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
   save_classification_results=False, max_iterations=None):
   """
@@ -105,7 +127,8 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
     'Current Precision: %.3f',
     'Time/image (ms): %.1f'
   ])
-
+  
+  # Requested outputs from the network.
   fetches = [top_1_op, top_5_op]
   fetch_indices = {
     'top_1_op' : 0,
@@ -163,6 +186,7 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
         dt = time.time()-t
 
         if save_classification_results:
+          
           batch_pred_class_ids = outputs[fetch_indices['predicted_classes']].astype(int)
           batch_logits = outputs[fetch_indices['logits']].astype(float)
           batch_instance_ids = outputs[fetch_indices['instance_ids']]
@@ -170,13 +194,12 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
           
           for i in range(cfg.BATCH_SIZE):
             
-            feature={}
-            feature['label'] = _int64_feature([batch_gt_class_ids[i]])
-            feature['instance_id'] = _bytes_feature([batch_instance_ids[i]])
-            feature['logits'] = _float_feature(batch_logits[i])
-            feature['pred_label'] = _int64_feature(batch_pred_class_ids[i])
-            
-            example = tf.train.Example(features=tf.train.Features(feature=feature))
+            example = _convert_to_classification_example(
+              image_id = batch_instance_ids[i], 
+              gt_label = batch_gt_class_ids[i], 
+              pred_label = batch_pred_class_ids[i][0],
+              logits = batch_logits[i].tolist()
+            )
 
             classification_writer.write(example.SerializeToString())
             
@@ -215,12 +238,13 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
     if summary_dir != None:
       precision_file = os.path.join(summary_dir, "precision_summary.txt")
       with open(precision_file, 'a') as f:
-        print >> f, 'Model %d: precision @ 1 = %.3f' % (global_step, precision)
-    
+        print >> f, 'Model %d: precision @ 1 = %.3f' % (global_step, precision_at_1)
+        print >> f, '          precision @ 5 = %.3f' % (precision_at_5, )
+        print >> f, ""
     if summary_writer != None:
       summary = tf.Summary()
       summary.ParseFromString(sess.run(summary_op))
-      summary.value.add(tag='Precision @ 1', simple_value=precision)
+      summary.value.add(tag='Precision @ 1', simple_value=precision_at_1)
       summary.value.add(tag='Precision @ 5', simple_value=precision_at_5)
       summary_writer.add_summary(summary, global_step)
 
