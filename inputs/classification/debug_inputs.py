@@ -39,11 +39,11 @@ def debug(tfrecord_path, config_path):
       threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
       while True:
-        output = sess.run([images, labels_sparse])
-        for image, label in zip(output[0], output[1]):
+        output = sess.run([images, labels_sparse, instance_ids])
+        for image, label, image_id in zip(output[0], output[1], output[2]):
 
             plt.imshow((image * cfg.IMAGE_STD + cfg.IMAGE_MEAN).astype(np.uint8))
-            plt.title("Class: %d" % (label,))
+            plt.title("Class: %d\tImage: %s" % (label,image_id))
             plt.show(block=False)
             t = raw_input("push button")
             if t != '':
