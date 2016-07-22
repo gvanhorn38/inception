@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 import sys
 
-from inception.v3.config import parse_config_file
+from config import parse_config_file
 from construct import construct_network_input_nodes
 
 
