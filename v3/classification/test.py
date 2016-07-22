@@ -25,7 +25,7 @@ def _convert_to_classification_example(image_id, gt_label, pred_label, logits):
       'image/pred/class/logits' : _float_feature(logits),
       'image/pred/class/label' :  _int64_feature(pred_label),
       'image/class/label': _int64_feature(gt_label),
-      'image/id': _bytes_feature(str(id))
+      'image/id': _bytes_feature(str(image_id))
     })
   )
       
