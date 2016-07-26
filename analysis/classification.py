@@ -11,7 +11,6 @@ import os
 import sys
 import tensorflow as tf
 
-
 """
 Dump files that can be uploaded to Google Sheets for analysis. 
 """
@@ -47,7 +46,7 @@ def process(classification_tfrecords, num_classes, output_dir, class_names=None,
   
   # TensorFlow operations to read in the classification results
   filename_queue = tf.train.string_input_producer(
-    classification_records,
+    classification_tfrecords,
     num_epochs=1
   )
   
@@ -58,10 +57,10 @@ def process(classification_tfrecords, num_classes, output_dir, class_names=None,
   features = tf.parse_single_example(
     serialized_example,
     features = {
-      'image/pred/class/logits' : _float_feature(logits),
-      'image/pred/class/label' :  _int64_feature(pred_label),
-      'image/class/label': _int64_feature(gt_label),
-      'image/id': _bytes_feature(str(id))
+      'image/pred/class/logits' : tf.FixedLenFeature([num_classes], tf.float32),
+      'image/pred/class/label' : tf.FixedLenFeature([], tf.int64),
+      'image/class/label': tf.FixedLenFeature([], tf.int64),
+      'image/id': tf.FixedLenFeature([], tf.string)
     }
   )
 
@@ -88,13 +87,14 @@ def process(classification_tfrecords, num_classes, output_dir, class_names=None,
       
         # classification result
         image_id, gt_label, pred_label, logits = sess.run(fetches)
-      
+        #outputs = sess.run(fetches)
+        
         if image_id in processed_instances:
           continue
         else:
           processed_instances.add(image_id)
           num_instances += 1
-      
+        
         class_stats[gt_label]['support'] += 1
       
         # Correct classification
@@ -138,6 +138,10 @@ def process(classification_tfrecords, num_classes, output_dir, class_names=None,
     # Compute the f1 score for the category
     num = 2. * stats['tp']
     denom = 2. * stats['tp'] + stats['fn'] + stats['fp']
+    if denom == 0:
+      print class_id
+      print stats
+      
     f1 = num  / denom
     
     # process the mistakes for this category. We want to be able to render the images. 
@@ -245,16 +249,31 @@ def process(classification_tfrecords, num_classes, output_dir, class_names=None,
   #####################################
   # Dump the confusion matrix
   # Not sure what I want to do here....
-  with open(os.path.join(output_dir, 'confusion_matrix.tsv'), 'w') as f:
+  with open(os.path.join(output_dir, 'raw_confusion_matrix.tsv'), 'w') as f:
     print >> f, "\t".join([""] + [x['name'] for x in report_data])
     for i in range(num_classes):
       print >> f, "\t".join([report_data[i]['name']] + map(str, confusion_matrix[i]))
   
-
+  with open(os.path.join(output_dir, 'normalized_confusion_matrix.tsv'), 'w') as f:
+    print >> f, "\t".join([""] + [x['name'] for x in report_data])
+    for i in range(num_classes):
+      print >> f, "\t".join([report_data[i]['name']] + map(str, confusion_matrix[i] / np.sum(confusion_matrix[i])))
+  
 if __name__ == '__main__':
-  classification_records = [sys.argv[1]]
-  category_labels_file = sys.argv[2]
+  classification_tfrecords = [sys.argv[1]]
+  num_classes = int(sys.argv[2])
   output_dir = sys.argv[3]
-  process(classification_records, category_labels_file, output_dir)
+  
+  class_names_path = sys.argv[4]
+  image_urls_path = sys.argv[5]
+  
+  with open(class_names_path) as f:
+    class_names = json.load(f)
+  class_names = {v : k for k, v in class_names.items()}
+  
+  with open(image_urls_path) as f:
+    image_urls = json.load(f)
+  
+  process(classification_tfrecords, num_classes, output_dir, class_names, image_urls)
   
   

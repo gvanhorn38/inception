@@ -24,7 +24,7 @@ from config import parse_config_file
 from network_utils import add_logits
 import v3.classification.model as model
 
-def export(model_path, export_path, export_version, cfg):
+def export(model_path, export_path, export_version, export_for_serving, cfg):
   
   graph = tf.get_default_graph()
 
@@ -90,35 +90,24 @@ def export(model_path, export_path, export_version, cfg):
     
     saver.restore(sess, model_path)
 
-    export_saver = tf.train.Saver(sharded=True)
-    model_exporter = exporter.Exporter(export_saver)
-    signature = exporter.classification_signature(input_tensor=image_data, scores_tensor=class_scores, classes_tensor=predicted_classes)
-    model_exporter.init(sess.graph.as_graph_def(),
-                        default_graph_signature=signature)
-    model_exporter.export(export_path, tf.constant(export_version), sess)
+    # TODO: Change to options flag
+    if export_for_serving:
+      export_saver = tf.train.Saver(sharded=True)
+      model_exporter = exporter.Exporter(export_saver)
+      signature = exporter.classification_signature(input_tensor=image_data, scores_tensor=class_scores, classes_tensor=predicted_classes)
+      model_exporter.init(sess.graph.as_graph_def(),
+                          default_graph_signature=signature)
+      model_exporter.export(export_path, tf.constant(export_version), sess)
     
-    # TODO: Change to debug flag
-    # GVH: This doesn't work if we assume raw float data being passed in.
-    if False:
-      plt.ion()
-      while True:
-        file_path = raw_input("File Path:")
-        while not os.path.exists(file_path) or not os.path.isfile(file_path):
-          file_path = raw_input("File Path:")
-          
-        with open(file_path, 'rb') as f:
-          # See inception_inference.proto for gRPC request/response details.
-          data = f.read()
-        
-        outputs = sess.run([class_scores, predicted_classes, image], {jpegs : [data]})
-        
-        print outputs[:2]
-        img = outputs[2]
-        plt.imshow(img)
-        plt.show()
-        t = raw_input("Press a button:")
-        if t != '':
-          break
+    else:
+      v2c = tf.python.client.graph_util.convert_variables_to_constants
+      deploy_graph_def = v2c(sess, graph.as_graph_def(), [logits.name[:-2]])
+    
+      if not os.path.exists(export_path):
+          os.makedirs(export_path)
+      save_path = os.path.join(export_path, 'constant_model-%d.pb' % (export_version,))
+      with open(save_path, 'wb') as f:
+          f.write(deploy_graph_def.SerializeToString())
     
 def parse_args():
 
@@ -140,6 +129,10 @@ def parse_args():
                         help='Path to the configuration file',
                         required=True, type=str)
     
+    parser.add_argument('--serving', dest='serving',
+                        help='Export for TensorFlow Serving usage. Otherwise, a constant graph will be generated.',
+                        action='store_true', default=False)
+    
 
     args = parser.parse_args()
     
@@ -159,5 +152,5 @@ if __name__ == '__main__':
     print "Configurations:"
     print pprint.pprint(cfg)
 
-    export(args.specific_model, args.export_path, args.export_version, cfg=cfg)
+    export(args.specific_model, args.export_path, args.export_version, args.serving, cfg=cfg)
   
