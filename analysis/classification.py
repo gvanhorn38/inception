@@ -161,7 +161,7 @@ def process(classification_tfrecords, num_classes, output_dir, class_names=None,
       'tp' : stats['tp'],
       'fp' : stats['fp'],
       'fn' : stats['fn'],
-      'name' : class_names.get(class_id, class_id),
+      'name' : str(class_names.get(class_id, class_id)),
       'mistakes' : mistake_images
     }
   
