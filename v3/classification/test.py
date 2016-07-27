@@ -32,7 +32,7 @@ def _convert_to_classification_example(image_id, gt_label, pred_label, logits):
   return example
 
 def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None, 
-  save_classification_results=False, max_iterations=None):
+  save_classification_results=False, max_iterations=None, loop=False):
   """
   Test an Inception V3 network.
   
@@ -49,7 +49,15 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
       file containing the logits and predicted class for each image. 
     max_iterations (int): The maximum number of batches to execute. Leave as None to go
       through all records.
+    loop (bool): Should we continue to loop, waiting for a new model to be produced (by a
+      training process)? This cannot be used with `specific_model_path`.
   """  
+  
+  # Make sure we are given a checkpoint dir (rather than just a specific_model_path) if the
+  # user wants us to loop
+  if checkpoint_dir == None and loop:
+    print "ERROR: need a `checkpoint_dir` in order to `loop`"
+    return
   
   graph = tf.get_default_graph()
 
@@ -60,11 +68,14 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
         per_process_gpu_memory_fraction=cfg.SESSION_CONFIG.PER_PROCESS_GPU_MEMORY_FRACTION
     )
   )
-
+  
+  # Go through all of the records once, or are we looping? 
+  num_epochs = 1 if not loop else None
+  
   # Input Nodes
   images, labels_sparse, instance_ids = construct_network_input_nodes(tfrecords,
     input_type=cfg.INPUT_TYPE,
-    num_epochs=1, # Go through all of the records once.
+    num_epochs=num_epochs, 
     batch_size=cfg.BATCH_SIZE,
     num_threads=cfg.NUM_INPUT_THREADS,
     add_summaries = False,
@@ -146,108 +157,123 @@ def test(tfrecords, checkpoint_dir, specific_model_path, cfg, summary_dir=None,
 
     tf.initialize_all_variables().run()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-
-    try:
-
-      if specific_model_path == None:
-        ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-        if ckpt and ckpt.model_checkpoint_path:
-          specific_model_path = ckpt.model_checkpoint_path
-        else:
-          print('No checkpoint file found')
-          return
-
-      # Restores from checkpoint
-      saver.restore(sess, specific_model_path)
-      # Assuming model_checkpoint_path looks something like:
-      #   /my-favorite-path/cifar10_train/model.ckpt-0,
-      # extract global_step from it.
-      global_step = int(specific_model_path.split('/')[-1].split('-')[-1])
-      print "Found model for global step: %d" % (global_step,)
-      
-      # Save the actually classifications for later processing
-      classification_writer = None
-      if save_classification_results: 
-        # create a writer for storing the tfrecords
-        output_path = os.path.join(summary_dir, 'classification_results-%d.tfrecords' % (global_step,))
-        classification_writer = tf.python_io.TFRecordWriter(output_path)
-      
-      true_count = 0.0  # Counts the number of correct predictions.
-      in_top_5_count = 0.0 # Counts the number of predictions that are in the top 5
-      total_sample_count = 0
-      step = 0
-      while not coord.should_stop():
-        
-        if max_iterations != None and step > max_iterations:
-          break
-        
-        t = time.time()
-        outputs = sess.run(fetches)
-        dt = time.time()-t
-
-        if save_classification_results:
-          
-          batch_pred_class_ids = outputs[fetch_indices['predicted_classes']].astype(int)
-          batch_logits = outputs[fetch_indices['logits']].astype(float)
-          batch_instance_ids = outputs[fetch_indices['instance_ids']]
-          batch_gt_class_ids = outputs[fetch_indices['labels_sparse']].astype(int)
-          
-          for i in range(cfg.BATCH_SIZE):
-            
-            example = _convert_to_classification_example(
-              image_id = batch_instance_ids[i], 
-              gt_label = batch_gt_class_ids[i], 
-              pred_label = batch_pred_class_ids[i][0],
-              logits = batch_logits[i].tolist()
-            )
-
-            classification_writer.write(example.SerializeToString())
-            
-
-        predictions = outputs[fetch_indices['top_1_op']]
-        true_count += np.sum(predictions)
-        
-        predictions_at_5 = outputs[fetch_indices['top_5_op']]
-        in_top_5_count += np.sum(predictions_at_5)
-        
-        print print_str % (
-          step,
-          true_count,
-          (step + 1) * cfg.BATCH_SIZE,
-          true_count / ((step + 1.) * cfg.BATCH_SIZE),
-          dt/cfg.BATCH_SIZE*1000
-        )
-
-        step += 1
-        total_sample_count += cfg.BATCH_SIZE
-
-    except tf.errors.OutOfRangeError as e:
-      pass
-
-    if save_classification_results:
-      # close the writer
-      classification_writer.close()
-
-    # Compute precision @ 1 and @5.
-    precision_at_1 = true_count / total_sample_count
-    precision_at_5 = in_top_5_count / total_sample_count
-    print('Model %d: precision @ 1 = %.3f' % (global_step, precision_at_1))
-    print('          precision @ 5 = %.3f' % (precision_at_5, ))
     
-    # keep a conveinence file with the precision (append to an existing file)
-    if summary_dir != None:
-      precision_file = os.path.join(summary_dir, "precision_summary.txt")
-      with open(precision_file, 'a') as f:
-        print >> f, 'Model %d: precision @ 1 = %.3f' % (global_step, precision_at_1)
-        print >> f, '          precision @ 5 = %.3f' % (precision_at_5, )
-        print >> f, ""
-    if summary_writer != None:
-      summary = tf.Summary()
-      summary.ParseFromString(sess.run(summary_op))
-      summary.value.add(tag='Precision @ 1', simple_value=precision_at_1)
-      summary.value.add(tag='Precision @ 5', simple_value=precision_at_5)
-      summary_writer.add_summary(summary, global_step)
+    # this is where we will loop, and check for new models being generated by a training process.
+    current_global_step = None
+    while True:
+    
+      try:
 
+        if specific_model_path == None or loop:
+          ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+          if ckpt and ckpt.model_checkpoint_path:
+            specific_model_path = ckpt.model_checkpoint_path
+          else:
+            print "ERROR: No checkpoint file found"
+            return
+        
+        # Assuming model_checkpoint_path looks something like:
+        #   /my-favorite-path/cifar10_train/model.ckpt-0,
+        # extract global_step from it.
+        global_step = int(specific_model_path.split('/')[-1].split('-')[-1])
+        
+        # Did we find a new model? 
+        if global_step == current_global_step:
+          time.sleep(60)
+          continue
+        current_global_step = global_step
+        
+        # Restores from checkpoint
+        print "Found model for global step: %d" % (global_step,)
+        saver.restore(sess, specific_model_path)
+         
+        # Save the actually classifications for later processing
+        classification_writer = None
+        if save_classification_results: 
+          # create a writer for storing the tfrecords
+          output_path = os.path.join(summary_dir, 'classification_results-%d.tfrecords' % (global_step,))
+          classification_writer = tf.python_io.TFRecordWriter(output_path)
+        
+        true_count = 0.0  # Counts the number of correct predictions.
+        in_top_5_count = 0.0 # Counts the number of predictions that are in the top 5
+        total_sample_count = 0
+        step = 0
+        while not coord.should_stop():
+          
+          if max_iterations != None and step > max_iterations:
+            break
+          
+          t = time.time()
+          outputs = sess.run(fetches)
+          dt = time.time()-t
+
+          if save_classification_results:
+            
+            batch_pred_class_ids = outputs[fetch_indices['predicted_classes']].astype(int)
+            batch_logits = outputs[fetch_indices['logits']].astype(float)
+            batch_instance_ids = outputs[fetch_indices['instance_ids']]
+            batch_gt_class_ids = outputs[fetch_indices['labels_sparse']].astype(int)
+            
+            for i in range(cfg.BATCH_SIZE):
+              
+              example = _convert_to_classification_example(
+                image_id = batch_instance_ids[i], 
+                gt_label = batch_gt_class_ids[i], 
+                pred_label = batch_pred_class_ids[i][0],
+                logits = batch_logits[i].tolist()
+              )
+
+              classification_writer.write(example.SerializeToString())
+              
+
+          predictions = outputs[fetch_indices['top_1_op']]
+          true_count += np.sum(predictions)
+          
+          predictions_at_5 = outputs[fetch_indices['top_5_op']]
+          in_top_5_count += np.sum(predictions_at_5)
+          
+          print print_str % (
+            step,
+            true_count,
+            (step + 1) * cfg.BATCH_SIZE,
+            true_count / ((step + 1.) * cfg.BATCH_SIZE),
+            dt/cfg.BATCH_SIZE*1000
+          )
+
+          step += 1
+          total_sample_count += cfg.BATCH_SIZE
+
+      except tf.errors.OutOfRangeError as e:
+        pass
+
+      if save_classification_results:
+        # close the writer
+        classification_writer.close()
+
+      # Compute precision @ 1 and @5.
+      precision_at_1 = true_count / total_sample_count
+      precision_at_5 = in_top_5_count / total_sample_count
+      print('Model %d: precision @ 1 = %.3f' % (global_step, precision_at_1))
+      print('          precision @ 5 = %.3f' % (precision_at_5, ))
+      
+      # keep a conveinence file with the precision (append to an existing file)
+      if summary_dir != None:
+        precision_file = os.path.join(summary_dir, "precision_summary.txt")
+        with open(precision_file, 'a') as f:
+          print >> f, 'Model %d: precision @ 1 = %.3f' % (global_step, precision_at_1)
+          print >> f, '          precision @ 5 = %.3f' % (precision_at_5, )
+          print >> f, ""
+      if summary_writer != None:
+        summary = tf.Summary()
+        summary.ParseFromString(sess.run(summary_op))
+        summary.value.add(tag='Precision @ 1', simple_value=precision_at_1)
+        summary.value.add(tag='Precision @ 5', simple_value=precision_at_5)
+        summary_writer.add_summary(summary, global_step)
+      
+      # If we are not looping, then break out of the loop
+      if not loop:
+        break
+        
   coord.request_stop()
   coord.join(threads)
 

@@ -38,6 +38,10 @@ def parse_args():
     parser.add_argument('--max_iterations', dest='max_iterations',
                         help='Maximum number of iterations to run',
                         required=False, type=int, default=None)
+                        
+    parser.add_argument('--loop', dest='loop',
+                        help='Run in a loop, waiting for a new model to be saved, and then test against it.',
+                        action='store_true', default=False)
 
     args = parser.parse_args()
     
@@ -69,5 +73,6 @@ if __name__ == '__main__':
       cfg=cfg,
       summary_dir = args.summary_dir,
       save_classification_results=args.save_classification_results,
-      max_iterations = args.max_iterations
+      max_iterations = args.max_iterations,
+      loop = args.loop
     )
