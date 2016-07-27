@@ -226,3 +226,8 @@ def print_operations(graph):
   # Print out the basic input -> inference -> loss operations for the graph
   for op in graph.get_operations():
       print op.type.ljust(35), '\t', op.name
+
+def print_trainable_variables(graph):
+  
+  for var in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
+    print var.name.ljust(20), '\t', var.get_shape().as_list()

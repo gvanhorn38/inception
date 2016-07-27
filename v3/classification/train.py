@@ -107,8 +107,8 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
         mixed_2_output = graph.get_tensor_by_name('mixed_2/join:0')
         third_head_features = model.add_layers_for_third_classification_head(graph, mixed_2_output, cfg)
     
-    # conv kernels, gamma and beta for batch normalization
-    original_inception_vars = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)]
+  # conv kernels, gamma and beta for batch normalization
+  original_inception_vars = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)]
 
   # Add the softmax logits
   logits = add_logits(graph, features, cfg.NUM_CLASSES)
@@ -162,7 +162,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   )
 
   # Compute the gradients using the loss
-  gradients = optimizer.compute_gradients(total_loss)
+  gradients = optimizer.compute_gradients(total_loss, var_list=var_list)
   # Apply the gradients
   optimize_op = optimizer.apply_gradients(
     grads_and_vars = gradients,
@@ -200,7 +200,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
     max_to_keep = 3,
     keep_checkpoint_every_n_hours = 1
   )
-
+  
   # Look to see if there is a checkpoint file
   ckpt = tf.train.get_checkpoint_state(save_dir)
   if ckpt:
@@ -237,7 +237,7 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
   # create the summary writer to write the event files
   summar_writer = tf.train.SummaryWriter(
     summary_logdir,
-    graph_def=graph.as_graph_def(),
+    graph=graph,
     max_queue=10,
     flush_secs=30
   )
@@ -303,14 +303,17 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
             sess=sess,
             save_path= os.path.join(save_dir, 'ft_inception_v3'),
             global_step=step
-          )
-
-
+          )    
+    
     except Exception as e:
      # Report exceptions to the coordinator.
      coord.request_stop(e)
-
-  # When done, ask the threads to stop. It is innocuous to request stop twice.
-  coord.request_stop()
-  # And wait for them to actually do it.
-  coord.join(threads)
+  
+  try:   
+    # When done, ask the threads to stop. It is innocuous to request stop twice.
+    coord.request_stop()
+    # And wait for them to actually do it.
+    coord.join(threads)
+  
+  except tensorflow.errors.CancelledError:
+    pass
