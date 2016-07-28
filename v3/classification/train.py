@@ -27,16 +27,6 @@ def add_loss(graph, logits, labels_sparse, scale=1.0):
   with graph.name_scope('loss'):
     batch_size, num_classes = logits.get_shape().as_list()
     
-    # Convert the sparse labels to a dense matrix
-    # labels_dense = tf.sparse_to_dense(
-#       sparse_indices = tf.transpose(
-#         tf.pack([tf.range(batch_size), labels_sparse])
-#       ),
-#       output_shape = [batch_size, num_classes],
-#       sparse_values = np.ones(batch_size, dtype='float32')
-#     )
-#     loss = tf.nn.softmax_cross_entropy_with_logits(logits, labels_dense)
-    
     loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels_sparse)
     
     # mean across the batch
@@ -48,9 +38,6 @@ def add_loss(graph, logits, labels_sparse, scale=1.0):
     tf.add_to_collection('losses', loss)
 
   return loss
-
-  # sum of the cross entropy loss and the l2 norm weight loss
-  #return tf.add_n(tf.get_collection('losses'), name='total_loss')
 
 def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxiliary_variables=False):
   """
