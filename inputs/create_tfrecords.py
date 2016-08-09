@@ -25,6 +25,9 @@ import os
 import sys
 import tensorflow as tf
 import threading
+import json
+import csv
+import random
 
 from proto_utils import _int64_feature, _float_feature, _bytes_feature
 
@@ -130,7 +133,11 @@ def _is_png(filename):
   Returns:
     boolean indicating if the image is a PNG.
   """
-  return False
+  filepath, file_extension = os.path.splitext(filename)
+  if file_extension == '.png':
+    return True
+  else:
+    return False
 
 
 def _is_cmyk(filename):
@@ -180,7 +187,7 @@ def _process_image(filename, coder):
   return image_data, height, width
 
 
-def _process_image_files_batch(coder, thread_index, ranges, name, output_directory, dataset, num_shards):
+def _process_image_files_batch(coder, thread_index, ranges, name, output_directory, dataset, num_shards, error_count_file_path, error_tmp_file_path, log_dir=None):
   """Processes and saves list of images as TFRecord in 1 thread.
   Args:
     coder: instance of ImageCoder to provide TensorFlow image coding utils.
@@ -196,6 +203,9 @@ def _process_image_files_batch(coder, thread_index, ranges, name, output_directo
       list might contain from 0+ entries corresponding to the number of bounding
       box annotations for the image.
     num_shards: integer number of shards for this data set.
+    error_count_file_path: path to file that will hold error counts (any file processing error)
+    error_tmp_file_path: path to temporary file to hold error counts used for final summary output
+    log_dir: (optional) If supplied, write detailed error data for failed images to this location
   """
   # Each thread produces N shards where N = int(num_shards / num_threads).
   # For instance, if num_shards = 128, and the num_threads = 2, then the first
@@ -210,12 +220,16 @@ def _process_image_files_batch(coder, thread_index, ranges, name, output_directo
   num_files_in_thread = ranges[thread_index][1] - ranges[thread_index][0]
 
   counter = 0
+  error_counter = 0
   for s in xrange(num_shards_per_batch):
     # Generate a sharded version of the file name, e.g. 'train-00002-of-00010'
     shard = thread_index * num_shards_per_batch + s
     output_filename = '%s-%.5d-of-%.5d' % (name, shard, num_shards)
     output_file = os.path.join(output_directory, output_filename)
     writer = tf.python_io.TFRecordWriter(output_file)
+
+    if log_dir is not None:
+      image_errors = {}
 
     shard_counter = 0
     files_in_shard = np.arange(shard_ranges[s], shard_ranges[s + 1], dtype=int)
@@ -225,12 +239,18 @@ def _process_image_files_batch(coder, thread_index, ranges, name, output_directo
       
       filename = image_example['filename']
 
-      image_buffer, height, width = _process_image(filename, coder)
+      try:
+        image_buffer, height, width = _process_image(filename, coder)
 
-      example = _convert_to_example(image_example, image_buffer, height, width)
-      writer.write(example.SerializeToString())
-      shard_counter += 1
-      counter += 1
+        example = _convert_to_example(image_example, image_buffer, height, width)
+        writer.write(example.SerializeToString())
+        shard_counter += 1
+        counter += 1
+      except Exception as e:
+        print("Error processing %s" % filename)
+        error_counter += 1
+        if log_dir is not None:
+          image_errors[filename] = str(e) 
 
       if not counter % 1000:
         print('%s [thread %d]: Processed %d of %d images in thread batch.' %
@@ -241,11 +261,27 @@ def _process_image_files_batch(coder, thread_index, ranges, name, output_directo
           (datetime.now(), thread_index, shard_counter, output_file))
     sys.stdout.flush()
     shard_counter = 0
+
+    if log_dir is not None:
+      output_error_filename = 'Errors_%s-%.5d-of-%.5d' % (name, shard, num_shards)
+      output_error_file = os.path.join(log_dir, output_error_filename + '.json')
+      with open(output_error_file, 'w') as f:
+        json.dump(image_errors, f, indent=2)
+      output_error_file = os.path.join(log_dir, output_error_filename + '.csv')
+      with open(output_error_file, 'wb') as f:
+        writer = csv.writer(f)
+        for key, value in image_errors.items():
+          writer.writerow([key, value])      
+    
   print('%s [thread %d]: Wrote %d images to %d shards.' %
         (datetime.now(), thread_index, counter, num_files_in_thread))
   sys.stdout.flush()
+  with open(error_count_file_path, "a") as myfile:
+    myfile.write('%s [thread %d]: File errors from current thread: %d\n' % (datetime.now(), thread_index, error_counter))
+  with open(error_tmp_file_path, "a") as myfile:
+    myfile.write('%d\n' % error_counter)
 
-def create(dataset, dataset_name, output_directory, num_shards, num_threads):
+def create(dataset, dataset_name, output_directory, num_shards, num_threads, log_dir=None):
   """
   dataset : [{
     "filename" : <REQUIRED: path to the image file>, 
@@ -272,15 +308,28 @@ def create(dataset, dataset_name, output_directory, num_shards, num_threads):
   num_shards: the number of tfrecord files to create
   
   num_threads: the number of threads to use 
+
+  log_dir: (optional) directory for verbose error log output (for failed images).
+           This is only generated if log_dir is supplied.
   
   """
   
+  # Images in the tfrecords set must be shuffled properly
+  random.shuffle(dataset)
+
   # Break all images into batches with a [ranges[i][0], ranges[i][1]].
   spacing = np.linspace(0, len(dataset), num_threads + 1).astype(np.int)
   ranges = []
   threads = []
   for i in xrange(len(spacing) - 1):
     ranges.append([spacing[i], spacing[i+1]])
+
+  # Blank file for recording error counts per thread
+  error_count_file_path = os.path.join(output_directory, "ERROR_count.txt")
+  open(error_count_file_path, "w").close()  
+  # Temp file for storing counts per thread (used for summary)
+  error_tmp_file_path = os.path.join(output_directory, "ERROR_count.tmp")
+  open(error_tmp_file_path, "w").close()  
 
   # Launch a thread for each batch.
   print('Launching %d threads for spacings: %s' % (num_threads, ranges))
@@ -294,7 +343,7 @@ def create(dataset, dataset_name, output_directory, num_shards, num_threads):
 
   threads = []
   for thread_index in xrange(len(ranges)):
-    args = (coder, thread_index, ranges, dataset_name, output_directory, dataset, num_shards)
+    args = (coder, thread_index, ranges, dataset_name, output_directory, dataset, num_shards, error_count_file_path, error_tmp_file_path,log_dir)
     t = threading.Thread(target=_process_image_files_batch, args=args)
     t.start()
     threads.append(t)
@@ -303,5 +352,16 @@ def create(dataset, dataset_name, output_directory, num_shards, num_threads):
   coord.join(threads)
   print('%s: Finished writing all %d images in data set.' %
         (datetime.now(), len(dataset)))
+  total_error_count = 0
+  with open(error_tmp_file_path) as f:
+    for line in f:
+      pieces = line.strip().split()
+      total_error_count += int(pieces[0])
+  os.remove(error_tmp_file_path)
+
+  print('%s: Total file errors (files not included in tfrecords) %d.' % (datetime.now(), total_error_count))
   sys.stdout.flush()
+
+  with open(error_count_file_path, "a") as myfile:
+    myfile.write('\n%s: Total file errors: %d\n' % (datetime.now(), total_error_count))
   
