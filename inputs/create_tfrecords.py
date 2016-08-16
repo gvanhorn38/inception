@@ -22,11 +22,10 @@ A lot of this code comes from the tensorflow inception example, so here is their
 from datetime import datetime
 import numpy as np
 import os
+from Queue import Queue
 import sys
 import tensorflow as tf
 import threading
-import json
-import csv
 import random
 
 from proto_utils import _int64_feature, _float_feature, _bytes_feature
@@ -34,14 +33,8 @@ from proto_utils import _int64_feature, _float_feature, _bytes_feature
 def _convert_to_example(image_example, image_buffer, height, width):
   """Build an Example proto for an example.
   Args:
-    filename: string, path to an image file, e.g., '/path/to/example.JPG'
+    image_example: dict, an image example
     image_buffer: string, JPEG encoding of RGB image
-    label: integer, identifier for the ground truth for the network
-    synset: string, unique WordNet ID specifying the label, e.g., 'n02323233'
-    human: string, human-readable label, e.g., 'red fox, Vulpes vulpes'
-    bbox: list of bounding boxes; each box is a list of integers
-      specifying [xmin, ymin, xmax, ymax]. All boxes are assumed to belong to
-      the same label as the image label.
     height: integer, image height in pixels
     width: integer, image width in pixels
   Returns:
@@ -102,11 +95,6 @@ class ImageCoder(object):
     image = tf.image.decode_png(self._png_data, channels=3)
     self._png_to_jpeg = tf.image.encode_jpeg(image, format='rgb', quality=100)
 
-    # Initializes function that converts CMYK JPEG data to RGB JPEG data.
-    self._cmyk_data = tf.placeholder(dtype=tf.string)
-    image = tf.image.decode_jpeg(self._cmyk_data, channels=0)
-    self._cmyk_to_rgb = tf.image.encode_jpeg(image, format='rgb', quality=100)
-
     # Initializes function that decodes RGB JPEG data.
     self._decode_jpeg_data = tf.placeholder(dtype=tf.string)
     self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=3)
@@ -114,10 +102,6 @@ class ImageCoder(object):
   def png_to_jpeg(self, image_data):
     return self._sess.run(self._png_to_jpeg,
                           feed_dict={self._png_data: image_data})
-
-  def cmyk_to_rgb(self, image_data):
-    return self._sess.run(self._cmyk_to_rgb,
-                          feed_dict={self._cmyk_data: image_data})
 
   def decode_jpeg(self, image_data):
     image = self._sess.run(self._decode_jpeg,
@@ -139,19 +123,6 @@ def _is_png(filename):
   else:
     return False
 
-
-def _is_cmyk(filename):
-  """Determine if file contains a CMYK JPEG format image.
-  Args:
-    filename: string, path of the image file.
-  Returns:
-    boolean indicating if the image is a JPEG encoded with CMYK color space.
-  """
-  # File list from:
-  # https://github.com/cytsai/ilsvrc-cmyk-image-list
-  return False
-
-
 def _process_image(filename, coder):
   """Process a single image file.
   Args:
@@ -168,12 +139,8 @@ def _process_image(filename, coder):
   # Clean the dirty data.
   if _is_png(filename):
     # 1 image is a PNG.
-    print('Converting PNG to JPEG for %s' % filename)
+    #print('Converting PNG to JPEG for %s' % filename)
     image_data = coder.png_to_jpeg(image_data)
-  elif _is_cmyk(filename):
-    # 22 JPEG images are in CMYK colorspace.
-    print('Converting CMYK to RGB for %s' % filename)
-    image_data = coder.cmyk_to_rgb(image_data)
 
   # Decode the RGB JPEG.
   image = coder.decode_jpeg(image_data)
@@ -187,25 +154,18 @@ def _process_image(filename, coder):
   return image_data, height, width
 
 
-def _process_image_files_batch(coder, thread_index, ranges, name, output_directory, dataset, num_shards, error_count_file_path, error_tmp_file_path, log_dir=None):
+def _process_image_files_batch(coder, thread_index, ranges, name, output_directory, dataset, num_shards, error_queue):
   """Processes and saves list of images as TFRecord in 1 thread.
   Args:
     coder: instance of ImageCoder to provide TensorFlow image coding utils.
     thread_index: integer, unique batch to run index is within [0, len(ranges)).
     ranges: list of pairs of integers specifying ranges of each batches to
       analyze in parallel.
-    name: string, unique identifier specifying the data set
-    filenames: list of strings; each string is a path to an image file
-    synsets: list of strings; each string is a unique WordNet ID
-    labels: list of integer; each integer identifies the ground truth
-    humans: list of strings; each string is a human-readable label
-    bboxes: list of bounding boxes for each image. Note that each entry in this
-      list might contain from 0+ entries corresponding to the number of bounding
-      box annotations for the image.
+    name: string, unique identifier specifying the data set (e.g. `train` or `test`)
+    output_directory: string, file path to store the tfrecord files.
+    dataset: list, a list of image example dicts
     num_shards: integer number of shards for this data set.
-    error_count_file_path: path to file that will hold error counts (any file processing error)
-    error_tmp_file_path: path to temporary file to hold error counts used for final summary output
-    log_dir: (optional) If supplied, write detailed error data for failed images to this location
+    error_queue: Queue, a queue to place image examples that failed.
   """
   # Each thread produces N shards where N = int(num_shards / num_threads).
   # For instance, if num_shards = 128, and the num_threads = 2, then the first
@@ -228,9 +188,6 @@ def _process_image_files_batch(coder, thread_index, ranges, name, output_directo
     output_file = os.path.join(output_directory, output_filename)
     writer = tf.python_io.TFRecordWriter(output_file)
 
-    if log_dir is not None:
-      image_errors = {}
-
     shard_counter = 0
     files_in_shard = np.arange(shard_ranges[s], shard_ranges[s + 1], dtype=int)
     for i in files_in_shard:
@@ -247,75 +204,63 @@ def _process_image_files_batch(coder, thread_index, ranges, name, output_directo
         shard_counter += 1
         counter += 1
       except Exception as e:
-        print("Error processing %s" % filename)
         error_counter += 1
-        if log_dir is not None:
-          image_errors[filename] = str(e) 
+        error_queue.put(image_example)
 
       if not counter % 1000:
-        print('%s [thread %d]: Processed %d of %d images in thread batch.' %
-              (datetime.now(), thread_index, counter, num_files_in_thread))
+        print('%s [thread %d]: Processed %d of %d images in thread batch, with %d errors.' %
+              (datetime.now(), thread_index, counter, num_files_in_thread, error_counter))
         sys.stdout.flush()
 
-    print('%s [thread %d]: Wrote %d images to %s' %
-          (datetime.now(), thread_index, shard_counter, output_file))
+    print('%s [thread %d]: Wrote %d images to %s, with %d errors.' %
+          (datetime.now(), thread_index, shard_counter, output_file, error_counter))
     sys.stdout.flush()
     shard_counter = 0
-
-    if log_dir is not None:
-      output_error_filename = 'Errors_%s-%.5d-of-%.5d' % (name, shard, num_shards)
-      output_error_file = os.path.join(log_dir, output_error_filename + '.json')
-      with open(output_error_file, 'w') as f:
-        json.dump(image_errors, f, indent=2)
-      output_error_file = os.path.join(log_dir, output_error_filename + '.csv')
-      with open(output_error_file, 'wb') as f:
-        writer = csv.writer(f)
-        for key, value in image_errors.items():
-          writer.writerow([key, value])      
     
-  print('%s [thread %d]: Wrote %d images to %d shards.' %
-        (datetime.now(), thread_index, counter, num_files_in_thread))
+  print('%s [thread %d]: Wrote %d images to %d shards, with %d errors.' %
+        (datetime.now(), thread_index, counter, num_files_in_thread, error_counter))
   sys.stdout.flush()
-  with open(error_count_file_path, "a") as myfile:
-    myfile.write('%s [thread %d]: File errors from current thread: %d\n' % (datetime.now(), thread_index, error_counter))
-  with open(error_tmp_file_path, "a") as myfile:
-    myfile.write('%d\n' % error_counter)
+  
 
-def create(dataset, dataset_name, output_directory, num_shards, num_threads, log_dir=None):
-  """
-  dataset : [{
-    "filename" : <REQUIRED: path to the image file>, 
-    "id" : <REQUIRED: id of the image>,
-    "class" : {
-      "label" : <[0, num_classes)>,
-      "text" : <text description of class>
-    },
-    "object" : {
-      "bbox" : {
-        "xmin" : [],
-        "xmax" : [],
-        "ymin" : [],
-        "ymax" : [],
-        "label" : []
+def create(dataset, dataset_name, output_directory, num_shards, num_threads, shuffle=True):
+  """Create the tfrecord files to be used to train or test a model.
+  
+  Args:
+    dataset : [{
+      "filename" : <REQUIRED: path to the image file>, 
+      "id" : <REQUIRED: id of the image>,
+      "class" : {
+        "label" : <[0, num_classes)>,
+        "text" : <text description of class>
+      },
+      "object" : {
+        "bbox" : {
+          "xmin" : [],
+          "xmax" : [],
+          "ymin" : [],
+          "ymax" : [],
+          "label" : []
+        }
       }
-    }
-  }]
-  
-  dataset_name: a name for the dataset
-  
-  output_directory: path to a directory to write the tfrecord files
-  
-  num_shards: the number of tfrecord files to create
-  
-  num_threads: the number of threads to use 
+    }]
+    
+    dataset_name: a name for the dataset
+    
+    output_directory: path to a directory to write the tfrecord files
+    
+    num_shards: the number of tfrecord files to create
+    
+    num_threads: the number of threads to use 
 
-  log_dir: (optional) directory for verbose error log output (for failed images).
-           This is only generated if log_dir is supplied.
+    shuffle : bool, should the image examples be shuffled or not prior to creating the tfrecords.
   
+  Returns:
+    list : a list of image examples that failed to process.
   """
   
   # Images in the tfrecords set must be shuffled properly
-  random.shuffle(dataset)
+  if shuffle:
+    random.shuffle(dataset)
 
   # Break all images into batches with a [ranges[i][0], ranges[i][1]].
   spacing = np.linspace(0, len(dataset), num_threads + 1).astype(np.int)
@@ -323,13 +268,6 @@ def create(dataset, dataset_name, output_directory, num_shards, num_threads, log
   threads = []
   for i in xrange(len(spacing) - 1):
     ranges.append([spacing[i], spacing[i+1]])
-
-  # Blank file for recording error counts per thread
-  error_count_file_path = os.path.join(output_directory, "ERROR_count.txt")
-  open(error_count_file_path, "w").close()  
-  # Temp file for storing counts per thread (used for summary)
-  error_tmp_file_path = os.path.join(output_directory, "ERROR_count.tmp")
-  open(error_tmp_file_path, "w").close()  
 
   # Launch a thread for each batch.
   print('Launching %d threads for spacings: %s' % (num_threads, ranges))
@@ -340,10 +278,13 @@ def create(dataset, dataset_name, output_directory, num_shards, num_threads, log
 
   # Create a generic TensorFlow-based utility for converting all image codings.
   coder = ImageCoder()
-
+  
+  # A Queue to hold the image examples that fail to process. 
+  error_queue = Queue()  
+  
   threads = []
   for thread_index in xrange(len(ranges)):
-    args = (coder, thread_index, ranges, dataset_name, output_directory, dataset, num_shards, error_count_file_path, error_tmp_file_path,log_dir)
+    args = (coder, thread_index, ranges, dataset_name, output_directory, dataset, num_shards, error_queue)
     t = threading.Thread(target=_process_image_files_batch, args=args)
     t.start()
     threads.append(t)
@@ -352,16 +293,12 @@ def create(dataset, dataset_name, output_directory, num_shards, num_threads, log
   coord.join(threads)
   print('%s: Finished writing all %d images in data set.' %
         (datetime.now(), len(dataset)))
-  total_error_count = 0
-  with open(error_tmp_file_path) as f:
-    for line in f:
-      pieces = line.strip().split()
-      total_error_count += int(pieces[0])
-  os.remove(error_tmp_file_path)
-
-  print('%s: Total file errors (files not included in tfrecords) %d.' % (datetime.now(), total_error_count))
-  sys.stdout.flush()
-
-  with open(error_count_file_path, "a") as myfile:
-    myfile.write('\n%s: Total file errors: %d\n' % (datetime.now(), total_error_count))
+  
+  # Collect the errors
+  errors = []
+  while not error_queue.empty():
+    errors.append(error_queue.get())
+  print ('%d examples failed.' % (len(errors),))
+  
+  return errors
   
