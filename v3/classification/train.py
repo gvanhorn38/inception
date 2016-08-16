@@ -302,5 +302,5 @@ def train(tfrecords, logdir, cfg, first_iteration=False, restore_initial_auxilia
     # And wait for them to actually do it.
     coord.join(threads)
   
-  except tensorflow.errors.CancelledError:
+  except tf.errors.CancelledError:
     pass
