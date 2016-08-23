@@ -161,7 +161,7 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
             
             detection_results.append({
               "image_id" : int(img_id),
-              "category_id" : 0,
+              "category_id" : 1, # coco person id
               "bbox" : [pred_xmin, pred_ymin, pred_w, pred_h],
               "score" : float(conf),
             })
