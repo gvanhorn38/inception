@@ -156,13 +156,19 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
             
             pred_xmin, pred_ymin, pred_xmax, pred_ymax = prior + loc
             
-            pred_w = pred_xmax - pred_xmin
-            pred_h = pred_ymax - pred_ymin
-            
+            # Not sure what we want to do here. Its interesting that we don't enforce this
+            if pred_xmin > pred_xmax:
+              t = pred_xmax
+              pred_xmax = pred_xmin
+              pred_xmin = t
+            if pred_ymin > pred_ymax:
+              t = pred_ymax
+              pred_ymax = pred_ymin
+              pred_ymin = t
+              
             detection_results.append({
               "image_id" : int(img_id),
-              "category_id" : 1, # coco person id
-              "bbox" : [pred_xmin, pred_ymin, pred_w, pred_h],
+              "bbox" : [pred_xmin, pred_ymin, pred_xmax, pred_ymax],
               "score" : float(conf),
             })
             
