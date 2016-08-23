@@ -65,9 +65,15 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
       cfg=cfg
     )
     
-    features = model.build(graph, images, None, cfg)
+    features = model.build(graph, images, cfg)
     
-    locations, confidences = model.add_detection_heads(graph, features, num_bboxes_per_cell=5, batch_size=cfg.BATCH_SIZE, cfg=cfg)
+    locations, confidences = model.add_detection_heads(
+      graph, 
+      features, 
+      num_bboxes_per_cell=5, 
+      batch_size=cfg.BATCH_SIZE, 
+      cfg=cfg
+    )
     
     # Restore the moving average variables for the conv filters, beta and gamma for
     # batch normalization and the softmax params
