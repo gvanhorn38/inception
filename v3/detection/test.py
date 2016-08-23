@@ -163,7 +163,7 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
               "image_id" : int(img_id),
               "category_id" : 0,
               "bbox" : [pred_xmin, pred_ymin, pred_w, pred_h],
-              "score" : conf,
+              "score" : float(conf),
             })
             
         step += 1
