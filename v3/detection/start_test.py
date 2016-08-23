@@ -42,6 +42,14 @@ def parse_args():
     parser.add_argument('--max_iterations', dest='max_iterations',
                         help='Maximum number of iterations to run',
                         required=False, type=int, default=None)
+    
+    parser.add_argument('--max_detections', dest='max_detections',
+                        help='Maximum number of detection to store per image',
+                        required=False, type=int, default=100) 
+    
+    parser.add_argument('--save_dir', dest='save_dir',
+                        help='Directory to save the json result file.',
+                        required=True, type=str)                
 
     args = parser.parse_args()
     
@@ -65,13 +73,19 @@ if __name__ == '__main__':
 
     print "Configurations:"
     print cfg
-
+    
+    with open(args.priors) as f:
+      bbox_priors = pickle.load(f)
+    
     test.test(
       tfrecords=args.tfrecords,
+      bbox_priors=bbox_priors,
       checkpoint_dir=args.checkpoint_dir,
       specific_model_path = args.specific_model,
+      save_dir = args.save_dir,
+      max_detections = args.max_detections,
       cfg=cfg,
-      summary_dir = args.summary_dir,
-      save_classification_results=args.save_classification_results,
-      max_iterations = args.max_iterations
+      #summary_dir = args.summary_dir,
+      #save_classification_results=args.save_classification_results,
+      #max_iterations = args.max_iterations
     )

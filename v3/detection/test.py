@@ -1,5 +1,11 @@
+"""
+For testing a detection system, we will take an approach similar to the COCO detection 
+challenge. Detection results will be stored and 
+"""
+
 import os
 import time
+import json
 
 from easydict import EasyDict
 import numpy as np
@@ -10,11 +16,28 @@ import tensorflow as tf
 import model
 from inputs.detection.construct import construct_network_input_nodes
 
-
-
-def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
+def intersection_over_union(gt_bbox, pred_bbox):
   
-  raise Exception("Not fully implemented: need to match predicted boxes to ground truth boxes.")
+  gt_xmin, gt_ymin, gt_xmax, gt_ymax = gt_bbox
+  pred_xmin, pred_ymin, pred_xmax, pred_ymax = pred_bbox
+  
+  x1 = max(gt_xmin, pred_xmin)
+  y1 = max(gt_ymin, pred_ymin)
+  x2 = min(gt_xmax, pred_xmax)
+  y2 = min(gt_ymax, pred_ymax)
+  
+  w = max(0, x2 - x1)
+  h = max(0, y2 - y1)
+  
+  intersection = w * h
+  gt_area = (gt_xmax - gt_xmin) * (gt_ymax - gt_ymin)
+  pred_area = (pred_xmax - pred_xmin) * (pred_ymax - pred_ymin)
+          
+  iou = intersection / (1.0 * gt_area + pred_area - intersection)
+  
+  return iou
+
+def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, max_detections, cfg):
   
   graph = tf.Graph()
   
@@ -30,7 +53,7 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
   
   with graph.as_default(), sess.as_default():
     
-    images, batched_bboxes, batched_num_bboxes, paths, gtb, best_prior_indices = construct_network_input_nodes(
+    images, batched_bboxes, batched_num_bboxes, image_ids = construct_network_input_nodes(
       tfrecords=tfrecords,
       max_num_bboxes=cfg.MAX_NUM_BBOXES,
       num_epochs=1,
@@ -67,15 +90,17 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
     })
     
     # Restore the parameters
-    saver = tf.train.Saver(shadow_vars)
+    saver = tf.train.Saver(shadow_vars, reshape=True)
 
-    fetches = [locations, confidences, gtb]
+    fetches = [locations, confidences, image_ids]
     
     coord = tf.train.Coordinator()
     
     tf.initialize_all_variables().run()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-
+    
+    detection_results = []
+    
     try:
 
       if specific_model_path == None:
@@ -96,7 +121,6 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
       
       print_str = ', '.join([
         'Step: %d',
-        'Avg Overlap: %.4f',
         'Time/image (ms): %.1f'
       ])
       
@@ -112,42 +136,32 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
         
         locs = outputs[0]
         confs = outputs[1]
-        gt_bboxes = outputs[2]
+        img_ids = outputs[2]
         
         for b in range(cfg.BATCH_SIZE):
           
-          # We need to do matching and non-max-suppression...
-          
-          
-          # Draw the GT Box
-          gt_bbox = gt_bboxes[b][0] # Assume 1
-          gt_xmin, gt_ymin, gt_xmax, gt_ymax = gt_bbox
-          
           indices = np.argsort(confs[b].ravel())[::-1]
+          img_id = img_ids[b]
           
-          # Draw the most confident box in red
-          loc = locs[b][indices[0]]
-          prior = bbox_priors[indices[0]]
-          pred_xmin, pred_ymin, pred_xmax, pred_ymax = prior + loc
-          
-          x1 = max(gt_xmin, pred_xmin)
-          y1 = max(gt_ymin, pred_ymin)
-          x2 = min(gt_xmax, pred_xmax)
-          y2 = min(gt_ymax, pred_ymax)
-          
-          w = max(0, x2 - x1)
-          h = max(0, y2 - y1)
-          
-          intersection = w * h
-          gt_area = (gt_xmax - gt_xmin) * (gt_ymax - gt_ymin)
-          pred_area = (pred_xmax - pred_xmin) * (pred_ymax - pred_ymin)
-          
-          overlap = intersection / (1.0 * gt_area + pred_area - intersection)
-          
-          total_overlap += overlap
-          
+          for i in range(max_detections):
+            loc = locs[b][indices[i]]
+            conf = confs[b][indices[i]]          
+            prior = bbox_priors[indices[i]]
+            
+            pred_xmin, pred_ymin, pred_xmax, pred_ymax = prior + loc
+            
+            pred_w = pred_xmax - pred_xmin
+            pred_h = pred_ymax - pred_ymin
+            
+            detection_results.append({
+              "image_id" : int(img_id),
+              "category_id" : 0,
+              "bbox" : [pred_xmin, pred_ymin, pred_w, pred_h],
+              "score" : conf,
+            })
+            
         step += 1
-        print print_str % (step, total_overlap / (step * cfg.BATCH_SIZE * 1.0), (dt / cfg.BATCH_SIZE) * 1000)
+        print print_str % (step, (dt / cfg.BATCH_SIZE) * 1000)
           
 
     except tf.errors.OutOfRangeError as e:
@@ -155,4 +169,9 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg):
       
     coord.request_stop()
     coord.join(threads)
+    
+    # save the results
+    save_path = os.path.join(save_dir, "results-%d.json" % global_step)
+    with open(save_path, 'w') as f: 
+      json.dump(detection_results, f)
             
