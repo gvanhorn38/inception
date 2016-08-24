@@ -149,14 +149,14 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
           indices = np.argsort(confs[b].ravel())[::-1]
           img_id = img_ids[b]
           
-          for i in range(max_detections):
-            loc = locs[b][indices[i]]
-            conf = confs[b][indices[i]]          
-            prior = bbox_priors[indices[i]]
+          for index in indices[0:max_detections]:
+            loc = locs[b][index].ravel()
+            conf = confs[b][index]          
+            prior = np.array(bbox_priors[index])
             
             pred_xmin, pred_ymin, pred_xmax, pred_ymax = prior + loc
             
-            # Not sure what we want to do here. Its interesting that we don't enforce this
+            # Not sure what we want to do here. Its interesting that we don't enforce this anywhere in the model
             if pred_xmin > pred_xmax:
               t = pred_xmax
               pred_xmax = pred_xmin
@@ -167,9 +167,9 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
               pred_ymin = t
               
             detection_results.append({
-              "image_id" : int(img_id),
+              "image_id" : int(img_id), # converts  from np.array
               "bbox" : [pred_xmin, pred_ymin, pred_xmax, pred_ymax],
-              "score" : float(conf),
+              "score" : float(conf), # converts from np.array
             })
             
         step += 1

@@ -69,7 +69,9 @@ def visual_test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg
     
     tf.initialize_all_variables().run()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-
+    
+    plt.ion()
+    
     try:
 
       if specific_model_path == None:
@@ -120,21 +122,26 @@ def visual_test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg
 
           # Draw the most confident boxes in red
           indices = np.argsort(confs[b].ravel())[::-1]
-          for index in indices[0:gt_num_bboxes[b]]:
+          for i, index in enumerate(indices[0:gt_num_bboxes[b]]):
           
             loc = locs[b][index].ravel()
+            conf = confs[b][index]
             prior = np.array(bbox_priors[index])
             
             xmin, ymin, xmax, ymax = (prior + loc) * cfg.INPUT_SIZE
             plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'r-')
-          
+            
+            print "Pred Confidence for box %d: %f" % (i, conf)
+            
           plt.show()
+          
           
           t = raw_input("push button")
           if t != '':
             done = True
           
-       
+          plt.clf()
+          
 
     except tf.errors.OutOfRangeError as e:
       pass
