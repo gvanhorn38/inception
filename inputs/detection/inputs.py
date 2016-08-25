@@ -145,7 +145,7 @@ def augment_image_and_bboxes(image, orig_bboxes, do_random_flip, do_random_shift
     ])
   perturbed_bboxes = np.array(gtg_bboxes, dtype=np.float32)
   
-  return [perturbed_image, perturbed_bboxes]
+  return [perturbed_image, perturbed_bboxes, np.int32(image_height), np.int32(image_width)]
 
 
 def reshape_bboxes(bboxes):
@@ -231,10 +231,13 @@ def input_nodes(
     # We need to do the same transformations to the bounding boxes.
     if augment:
       params = [image, bboxes, cfg.RANDOM_FLIP, cfg.RANDOM_BBOX_SHIFT, cfg.MAX_BBOX_COORD_SHIFT, cfg.RANDOM_CROP]
-      output = tf.py_func(augment_image_and_bboxes, params, [tf.float32, tf.float32], name='augment_image')
+      output = tf.py_func(augment_image_and_bboxes, params, [tf.float32, tf.float32, tf.int32, tf.int32], name='augment_image')
       image = output[0]
       bboxes = output[1]
-    
+      
+      # tf.resize_images requires the shapes to be defined.
+      image = tf.reshape(image, tf.pack([output[2], output[3], 3]))
+      
       if add_summaries:
         tf.image_summary('augmented_image', tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), tf.reshape(tf.py_func(reshape_bboxes, [bboxes], [tf.float32])[0], [1, -1, 4])))
     
@@ -263,7 +266,10 @@ def input_nodes(
       bboxes = bboxes / tf.cast(tf.pack([cfg.INPUT_SIZE, cfg.INPUT_SIZE, cfg.INPUT_SIZE, cfg.INPUT_SIZE]), tf.float32)
     
     else:
-      raise Exception("Not implemented: aspect ratio squishing")
+      # Since the bboxes are already in normalized coordinates, we are good to go.
+      # All we need to do is resize the image
+      image = tf.image.resize_images(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
+      image.set_shape([cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
     
     image -= cfg.IMAGE_MEAN
     image /= cfg.IMAGE_STD
