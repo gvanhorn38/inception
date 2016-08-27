@@ -16,26 +16,6 @@ import tensorflow as tf
 import model
 from inputs.detection.construct import construct_network_input_nodes
 
-def intersection_over_union(gt_bbox, pred_bbox):
-  
-  gt_xmin, gt_ymin, gt_xmax, gt_ymax = gt_bbox
-  pred_xmin, pred_ymin, pred_xmax, pred_ymax = pred_bbox
-  
-  x1 = max(gt_xmin, pred_xmin)
-  y1 = max(gt_ymin, pred_ymin)
-  x2 = min(gt_xmax, pred_xmax)
-  y2 = min(gt_ymax, pred_ymax)
-  
-  w = max(0, x2 - x1)
-  h = max(0, y2 - y1)
-  
-  intersection = w * h
-  gt_area = (gt_xmax - gt_xmin) * (gt_ymax - gt_ymin)
-  pred_area = (pred_xmax - pred_xmin) * (pred_ymax - pred_ymin)
-          
-  iou = intersection / (1.0 * gt_area + pred_area - intersection)
-  
-  return iou
 
 def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, max_detections, cfg):
   

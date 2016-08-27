@@ -4,6 +4,7 @@ import sys
 
 from config import parse_config_file
 import test
+import dense_test
 
 # GVH: For GPU restriction use CUDA_VISIBLE_DEVICES=0 python start_test ....
 
@@ -49,7 +50,11 @@ def parse_args():
     
     parser.add_argument('--save_dir', dest='save_dir',
                         help='Directory to save the json result file.',
-                        required=True, type=str)                
+                        required=True, type=str)
+    
+    parser.add_argument('--dense', dest='dense',
+                        help='For each image, extract and process crops from the image.',
+                        action='store_true', default=False)                
 
     args = parser.parse_args()
     
@@ -77,7 +82,11 @@ if __name__ == '__main__':
     with open(args.priors) as f:
       bbox_priors = pickle.load(f)
     
-    test.test(
+    test_func = test.test
+    if args.dense:
+      test_func = dense_test.test
+    
+    test_func(
       tfrecords=args.tfrecords,
       bbox_priors=bbox_priors,
       checkpoint_dir=args.checkpoint_dir,
