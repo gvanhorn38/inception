@@ -57,6 +57,9 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
   # shape: [number of priors, 4]
   bbox_priors = np.array(bbox_priors)
   
+  # Important to override the batch size to ensure its 1
+  cfg.BATCH_SIZE = 1
+  
   graph = tf.Graph()
   
   sess_config = tf.ConfigProto(
