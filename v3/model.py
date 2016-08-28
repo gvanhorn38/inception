@@ -1,738 +1,263 @@
-"""
-This file implements the Inception Decemeber 2015 model. Its close to the 
-architecture described in 
-  http://arxiv.org/abs/1512.00567 
-but its not exact. 
-"""
-
 import tensorflow as tf
-
-from network_utils import add_avg_pool, add_max_pool, add_conv
-
-# Figure 5 configuration
-# This isn't exactly figure 5. There is a 5x5 filter bank here.
-# So its like a combo of Figure 4 and Figure 5
-def add_figure5(graph, input,
-  conv_shape,
-  tower_conv_shape,
-  tower_conv_1_shape,
-  tower_1_conv_shape,
-  tower_1_conv_1_shape,
-  tower_1_conv_2_shape,
-  tower_2_conv_shape,
-  cfg):
-
-  conv = add_conv(
-    graph = graph,
-    input = input,
-    shape = conv_shape, # [1, 1, 192, 64],    # [1, 1, 256, 64],   # [1, 1, 288, 64]
-    strides = [1, 1, 1, 1],
-    padding = "SAME",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  # tower
-  with graph.name_scope("tower"):
-
-    tower_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape = tower_conv_shape, #[1, 1, 192, 48],   # [1, 1, 256, 48],    # [1, 1, 288, 48]
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_conv_1 = add_conv(
-      graph = graph,
-      input = tower_conv,
-      shape = tower_conv_1_shape, #[5, 5, 48, 64],  # [5, 5, 48, 64],    # [5, 5, 48, 64]
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  # tower_1
-  with graph.name_scope("tower"):
-
-    tower_1_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape = tower_1_conv_shape, #[1, 1, 192, 64],   # [1, 1, 256, 64],    # [1, 1, 288, 64]
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_1 = add_conv(
-      graph = graph,
-      input = tower_1_conv,
-      shape = tower_1_conv_1_shape, #[3, 3, 64, 96],  # [3, 3, 64, 96] ,   # [3, 3, 64, 96]
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_2 = add_conv(
-      graph = graph,
-      input = tower_1_conv_1,
-      shape = tower_1_conv_2_shape, #[3, 3, 96, 96],  # [3, 3, 96, 96] ,   # [3, 3, 96, 96]
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  # tower_2
-  with graph.name_scope("tower"):
-
-    tower_2_pool = add_avg_pool(
-      graph=graph,
-      input=input,
-      ksize=[1, 3, 3, 1],  # [1, 3, 3, 1]   # [1, 3, 3, 1]
-      strides=[1, 1, 1, 1],
-      padding = "SAME",
-      name="pool"
-    )
-
-    tower_2_conv = add_conv(
-      graph = graph,
-      input = tower_2_pool,
-      shape = tower_2_conv_shape, #[1, 1, 192, 32],   # [1, 1, 256, 64],  # [1, 1, 288, 64]
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  return tf.concat(
-    concat_dim=3,
-    values = [conv, tower_conv_1, tower_1_conv_2, tower_2_conv],
-    name="join"
-  )
-
-
-# First grid size reduction
-# mixed_3
-def add_figure10_1(graph, input, cfg):
-
-  conv = add_conv(
-    graph = graph,
-    input = input,
-    shape =  [3, 3, 288, 384],
-    strides = [1, 2, 2, 1],
-    padding = "VALID",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  with graph.name_scope("tower"):
-    tower_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape =  [1, 1, 288, 64],
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_conv_1 = add_conv(
-      graph = graph,
-      input = tower_conv,
-      shape =  [3, 3, 64, 96],
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_conv_2 = add_conv(
-      graph = graph,
-      input = tower_conv_1,
-      shape =  [3, 3, 96, 96],
-      strides = [1, 2, 2, 1],
-      padding = "VALID",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  pool = add_max_pool(
-    graph=graph,
-    input=input,
-    ksize=[1, 3, 3, 1],
-    strides=[1, 2, 2, 1],
-    padding = "VALID",
-    name="pool"
-  )
-
-  return tf.concat(
-    concat_dim=3,
-    values = [conv, tower_conv_2, pool],
-    name="join"
-  )
-
-
-def add_figure6(graph, input,
-  conv_shape,
-  tower_conv_shape,
-  tower_conv_1_shape,
-  tower_conv_2_shape,
-  tower_1_conv_shape,
-  tower_1_conv_1_shape,
-  tower_1_conv_2_shape,
-  tower_1_conv_3_shape,
-  tower_1_conv_4_shape,
-  tower_2_conv_shape,
-  cfg):
-
-  conv = add_conv(
-    graph = graph,
-    input = input,
-    shape =  conv_shape,
-    strides = [1, 1, 1, 1],
-    padding = "SAME",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  # tower
-  with graph.name_scope("tower"):
-    tower_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape =  tower_conv_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_conv_1 = add_conv(
-      graph = graph,
-      input = tower_conv,
-      shape =  tower_conv_1_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_conv_2 = add_conv(
-      graph = graph,
-      input = tower_conv_1,
-      shape =  tower_conv_2_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  # tower_1
-  with graph.name_scope("tower"):
-    tower_1_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape =  tower_1_conv_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_1 = add_conv(
-      graph = graph,
-      input = tower_1_conv,
-      shape =  tower_1_conv_1_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_2 = add_conv(
-      graph = graph,
-      input = tower_1_conv_1,
-      shape =  tower_1_conv_2_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_3 = add_conv(
-      graph = graph,
-      input = tower_1_conv_2,
-      shape =  tower_1_conv_3_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_4 = add_conv(
-      graph = graph,
-      input = tower_1_conv_3,
-      shape =  tower_1_conv_4_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  # tower_2
-  with graph.name_scope("tower"):
-
-    tower_2_pool = add_avg_pool(
-      graph=graph,
-      input=input,
-      ksize=[1, 3, 3, 1],
-      strides=[1, 1, 1, 1],
-      padding = "SAME",
-      name="pool"
-    )
-
-    tower_2_conv= add_conv(
-      graph = graph,
-      input = tower_2_pool,
-      shape =  tower_2_conv_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  return tf.concat(
-    concat_dim=3,
-    values = [conv, tower_conv_2, tower_1_conv_4, tower_2_conv],
-    name="join"
-  )
-
-# Second grid size reduction
-# mixed_8
-def add_figure10_2(graph, input, cfg):
-
-  # tower
-  with graph.name_scope("tower"):
-    tower_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape =  [1, 1, 768, 192],
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_conv_1 = add_conv(
-      graph = graph,
-      input = tower_conv,
-      shape =  [3, 3, 192, 320],
-      strides = [1, 2, 2, 1],
-      padding = "VALID",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  # tower_1
-  with graph.name_scope("tower"):
-    tower_1_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape =  [1, 1, 768, 192],
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_1 = add_conv(
-      graph = graph,
-      input = tower_1_conv,
-      shape =  [1, 7, 192, 192],
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_2 = add_conv(
-      graph = graph,
-      input = tower_1_conv_1,
-      shape =  [7, 1, 192, 192],
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_3 = add_conv(
-      graph = graph,
-      input = tower_1_conv_2,
-      shape =  [3, 3, 192, 192],
-      strides = [1, 2, 2, 1],
-      padding = "VALID",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  # pool
-  pool = add_max_pool(
-    graph=graph,
-    input=input,
-    ksize=[1, 3, 3, 1],
-    strides=[1, 2, 2, 1],
-    padding = "VALID",
-    name="pool"
-  )
-
-  return tf.concat(
-    concat_dim=3,
-    values = [tower_conv_1, tower_1_conv_3, pool],
-    name="join"
-  )
-
-def add_figure7(graph, input,
-  conv_shape,
-  tower_conv_shape,
-  tower_mixed_conv_shape,
-  tower_mixed_conv_1_shape,
-  tower_1_conv_shape,
-  tower_1_conv_1_shape,
-  tower_1_mixed_conv_shape,
-  tower_1_mixed_conv_1_shape,
-  tower_2_conv_shape,
-  use_avg_pool,
-  cfg):
-
-  # conv
-  conv = add_conv(
-    graph = graph,
-    input = input,
-    shape =  conv_shape,
-    strides = [1, 1, 1, 1],
-    padding = "SAME",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  # tower
-  with graph.name_scope("tower"):
-    tower_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape =  tower_conv_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    with graph.name_scope("mixed"):
-      tower_mixed_conv = add_conv(
-        graph = graph,
-        input = tower_conv,
-        shape =  tower_mixed_conv_shape,
-        strides = [1, 1, 1, 1],
-        padding = "SAME",
-        use_batch_statistics=cfg.USE_BATCH_STATISTICS
-      )
-
-      tower_mixed_conv_1 = add_conv(
-        graph = graph,
-        input = tower_conv,
-        shape =  tower_mixed_conv_1_shape,
-        strides = [1, 1, 1, 1],
-        padding = "SAME",
-        use_batch_statistics=cfg.USE_BATCH_STATISTICS
-      )
-
-  # tower_1
-  with graph.name_scope("tower"):
-    tower_1_conv = add_conv(
-      graph = graph,
-      input = input,
-      shape =  tower_1_conv_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    tower_1_conv_1 = add_conv(
-      graph = graph,
-      input = tower_1_conv,
-      shape =  tower_1_conv_1_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-    with graph.name_scope("mixed"):
-      tower_1_mixed_conv = add_conv(
-        graph = graph,
-        input = tower_1_conv_1,
-        shape =  tower_1_mixed_conv_shape,
-        strides = [1, 1, 1, 1],
-        padding = "SAME",
-        use_batch_statistics=cfg.USE_BATCH_STATISTICS
-      )
-
-      tower_1_mixed_conv_1 = add_conv(
-        graph = graph,
-        input = tower_1_conv_1,
-        shape =  tower_1_mixed_conv_1_shape,
-        strides = [1, 1, 1, 1],
-        padding = "SAME",
-        use_batch_statistics=cfg.USE_BATCH_STATISTICS
-      )
-
-  # tower_2
-  with graph.name_scope("tower"):
-    if use_avg_pool:
-      tower_2_pool = add_avg_pool(
-          graph=graph,
-          input=input,
-          ksize=[1, 3, 3, 1],
-          strides=[1, 1, 1, 1],
-          padding = "SAME",
-          name="pool"
-        )
-    else:
-      tower_2_pool = add_max_pool(
-        graph=graph,
-        input=input,
-        ksize=[1, 3, 3, 1],
-        strides=[1, 1, 1, 1],
-        padding = "SAME",
-        name="pool"
-      )
-
-    tower_2_conv = add_conv(
-      graph = graph,
-      input = tower_2_pool,
-      shape =  tower_2_conv_shape,
-      strides = [1, 1, 1, 1],
-      padding = "SAME",
-      use_batch_statistics=cfg.USE_BATCH_STATISTICS
-    )
-
-  return tf.concat(
-    concat_dim=3,
-    values = [conv, tower_mixed_conv, tower_mixed_conv_1, tower_1_mixed_conv, tower_1_mixed_conv_1, tower_2_conv],
-    name="join"
-  )
-
-# Rather than passing the graph around, we could do `with graph.as_default():`
-def build(graph, input, cfg):
-
-  # conv
-  conv = add_conv(
-    graph = graph,
-    input = input,
-    shape = [3, 3, 3, 32],
-    strides = [1, 2, 2, 1],
-    padding = "VALID",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  # conv_1
-  conv_1 = add_conv(
-    graph = graph,
-    input = conv,
-    shape = [3, 3, 32, 32],
-    strides = [1, 1, 1, 1],
-    padding = "VALID",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  # conv_2
-  conv_2 = add_conv(
-    graph = graph,
-    input = conv_1,
-    shape = [3, 3, 32, 64],
-    strides = [1, 1, 1, 1],
-    padding = "SAME",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  # pool
-  pool = add_max_pool(
-    graph=graph,
-    input=conv_2,
-    ksize=[1, 3, 3, 1],
-    strides=[1, 2, 2, 1],
-    padding = "VALID",
-    name="pool"
-  )
-
-  # conv_3
-  conv_3 = add_conv(
-    graph = graph,
-    input = pool,
-    shape = [1, 1, 64, 80],
-    strides = [1, 1, 1, 1],
-    padding = "VALID",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  # conv_4
-  conv_4 = add_conv(
-    graph = graph,
-    input = conv_3,
-    shape = [3, 3, 80, 192],
-    strides = [1, 1, 1, 1],
-    padding = "VALID",
-    use_batch_statistics=cfg.USE_BATCH_STATISTICS
-  )
-
-  # pool_1
-  pool_1 = add_max_pool(
-    graph=graph,
-    input=conv_4,
-    ksize=[1, 3, 3, 1],
-    strides=[1, 2, 2, 1],
-    padding = "VALID",
-    name="pool"
-  )
-
-  #################
-  # First block of inception modules
-  # 3 modules as specified in Figure 5
-
-  # mixed
-  with graph.name_scope("mixed"):
-    mixed = add_figure5(graph, pool_1,
-      conv_shape = [1, 1, 192, 64],
-      tower_conv_shape = [1, 1, 192, 48],
-      tower_conv_1_shape = [5, 5, 48, 64],
-      tower_1_conv_shape = [1, 1, 192, 64],
-      tower_1_conv_1_shape = [3, 3, 64, 96],
-      tower_1_conv_2_shape = [3, 3, 96, 96],
-      tower_2_conv_shape = [1, 1, 192, 32],
-      cfg=cfg
-    )
-
-  # mixed_1
-  with graph.name_scope("mixed"):
-    mixed_1 = add_figure5(graph, mixed,
-      conv_shape = [1, 1, 256, 64],
-      tower_conv_shape = [1, 1, 256, 48],
-      tower_conv_1_shape = [5, 5, 48, 64],
-      tower_1_conv_shape = [1, 1, 256, 64],
-      tower_1_conv_1_shape = [3, 3, 64, 96],
-      tower_1_conv_2_shape = [3, 3, 96, 96],
-      tower_2_conv_shape = [1, 1, 256, 64],
-      cfg=cfg
-    )
-
-
-  # mixed_2
-  with graph.name_scope("mixed"):
-    mixed_2 = add_figure5(graph, mixed_1,
-      conv_shape = [1, 1, 288, 64],
-      tower_conv_shape = [1, 1, 288, 48],
-      tower_conv_1_shape = [5, 5, 48, 64],
-      tower_1_conv_shape = [1, 1, 288, 64],
-      tower_1_conv_1_shape = [3, 3, 64, 96],
-      tower_1_conv_2_shape = [3, 3, 96, 96],
-      tower_2_conv_shape = [1, 1, 288, 64],
-      cfg=cfg
-    )
-
-  # End first block of inception modules
-  #################
-
-  # First Inception module for grid size reduction
-  with graph.name_scope("mixed"):
-    mixed_3 = add_figure10_1(graph, mixed_2, cfg=cfg)
-
-  # Second block of inception modules
-  # 4 modules as specified in Figure 6
-  # NOTE: rather than 5 modules as specified in the paper, there are only 4 modules in
-  # the graph def
-  # mixed_4
-  with graph.name_scope("mixed"):
-    mixed_4 = add_figure6(graph, mixed_3,
-      conv_shape =            [1, 1, 768, 192],
-      tower_conv_shape =      [1, 1, 768, 128],
-      tower_conv_1_shape =    [1, 7, 128, 128],
-      tower_conv_2_shape =    [7, 1, 128, 192],
-      tower_1_conv_shape =    [1, 1, 768, 128],
-      tower_1_conv_1_shape =  [7, 1, 128, 128],
-      tower_1_conv_2_shape =  [1, 7, 128, 128],
-      tower_1_conv_3_shape =  [7, 1, 128, 128],
-      tower_1_conv_4_shape =  [1, 7, 128, 192],
-      tower_2_conv_shape =    [1, 1, 768, 192],
-      cfg=cfg
-    )
-
-  # mixed_5
-  with graph.name_scope("mixed"):
-    mixed_5 = add_figure6(graph, mixed_4,
-      conv_shape =            [1, 1, 768, 192],
-      tower_conv_shape =      [1, 1, 768, 160],
-      tower_conv_1_shape =    [1, 7, 160, 160],
-      tower_conv_2_shape =    [7, 1, 160, 192],
-      tower_1_conv_shape =    [1, 1, 768, 160],
-      tower_1_conv_1_shape =  [7, 1, 160, 160],
-      tower_1_conv_2_shape =  [1, 7, 160, 160],
-      tower_1_conv_3_shape =  [7, 1, 160, 160],
-      tower_1_conv_4_shape =  [1, 7, 160, 192],
-      tower_2_conv_shape =    [1, 1, 768, 192],
-      cfg=cfg
-    )
-
-  # mixed_6
-  with graph.name_scope("mixed"):
-    mixed_6 = add_figure6(graph, mixed_5,
-      conv_shape =            [1, 1, 768, 192],
-      tower_conv_shape =      [1, 1, 768, 160],
-      tower_conv_1_shape =    [1, 7, 160, 160],
-      tower_conv_2_shape =    [7, 1, 160, 192],
-      tower_1_conv_shape =    [1, 1, 768, 160],
-      tower_1_conv_1_shape =  [7, 1, 160, 160],
-      tower_1_conv_2_shape =  [1, 7, 160, 160],
-      tower_1_conv_3_shape =  [7, 1, 160, 160],
-      tower_1_conv_4_shape =  [1, 7, 160, 192],
-      tower_2_conv_shape =    [1, 1, 768, 192],
-      cfg=cfg
-    )
-
-  # mixed_7
-  with graph.name_scope("mixed"):
-    mixed_7 = add_figure6(graph, mixed_6,
-      conv_shape =            [1, 1, 768, 192],
-      tower_conv_shape =      [1, 1, 768, 192],
-      tower_conv_1_shape =    [1, 7, 192, 192],
-      tower_conv_2_shape =    [7, 1, 192, 192],
-      tower_1_conv_shape =    [1, 1, 768, 192],
-      tower_1_conv_1_shape =  [7, 1, 192, 192],
-      tower_1_conv_2_shape =  [1, 7, 192, 192],
-      tower_1_conv_3_shape =  [7, 1, 192, 192],
-      tower_1_conv_4_shape =  [1, 7, 192, 192],
-      tower_2_conv_shape =    [1, 1, 768, 192],
-      cfg=cfg
-    )
-
-  # End second block of inception modules
-  #################
-
-  # Second Inception module for grid size reduction
-  with graph.name_scope("mixed"):
-    mixed_8 = add_figure10_2(graph, mixed_7, cfg=cfg)
-
-
-  #################
-  # Third block of inception modules
-  # 2 modules as specified in Figure 7
-  # mixed_9
-  with graph.name_scope("mixed"):
-    mixed_9 = add_figure7(graph, mixed_8,
-      conv_shape                  = [1, 1, 1280, 320],
-      tower_conv_shape            = [1, 1, 1280, 384],
-      tower_mixed_conv_shape      = [1, 3, 384, 384],
-      tower_mixed_conv_1_shape    = [3, 1, 384, 384],
-      tower_1_conv_shape          = [1, 1, 1280, 448],
-      tower_1_conv_1_shape        = [3, 3, 448, 384],
-      tower_1_mixed_conv_shape    = [1, 3, 384, 384],
-      tower_1_mixed_conv_1_shape  = [3, 1, 384, 384],
-      tower_2_conv_shape          = [1, 1, 1280, 192],
-      use_avg_pool = True,
-      cfg=cfg
-    )
-
-  with graph.name_scope("mixed"):
-    mixed_10 = add_figure7(graph, mixed_9,
-      conv_shape                  = [1, 1, 2048, 320],
-      tower_conv_shape            = [1, 1, 2048, 384],
-      tower_mixed_conv_shape      = [1, 3, 384, 384],
-      tower_mixed_conv_1_shape    = [3, 1, 384, 384],
-      tower_1_conv_shape          = [1, 1, 2048, 448],
-      tower_1_conv_1_shape        = [3, 3, 448, 384],
-      tower_1_mixed_conv_shape    = [1, 3, 384, 384],
-      tower_1_mixed_conv_1_shape  = [3, 1, 384, 384],
-      tower_2_conv_shape          = [1, 1, 2048, 192],
-      use_avg_pool = False, # use a max pool
-      cfg=cfg
-    )
-
-  return mixed_10
-
-
+import tensorflow.contrib.slim as slim
+
+def build(inputs,
+                 dropout_keep_prob=0.8,
+                 num_classes=1000,
+                 is_training=True,
+                 scope=''):
   
+  end_points = {}
+  with tf.op_scope([inputs], scope, 'inception_v3'):
+    with slim.arg_scope([slim.batch_norm, slim.dropout],
+                          is_training=is_training):
+      with slim.arg_scope([slim.conv2d, slim.max_pool2d, slim.avg_pool2d],
+                            stride=1, padding='VALID'):
+        # 299 x 299 x 3
+        end_points['conv0'] = slim.conv2d(inputs, 32, [3, 3], stride=2,
+                                         scope='conv0')
+        # 149 x 149 x 32
+        end_points['conv1'] = slim.conv2d(end_points['conv0'], 32, [3, 3],
+                                         scope='conv1')
+        # 147 x 147 x 32
+        end_points['conv2'] = slim.conv2d(end_points['conv1'], 64, [3, 3],
+                                         padding='SAME', scope='conv2')
+        # 147 x 147 x 64
+        end_points['pool1'] = slim.max_pool2d(end_points['conv2'], [3, 3],
+                                           stride=2, scope='pool1')
+        # 73 x 73 x 64
+        end_points['conv3'] = slim.conv2d(end_points['pool1'], 80, [1, 1],
+                                         scope='conv3')
+        # 73 x 73 x 80.
+        end_points['conv4'] = slim.conv2d(end_points['conv3'], 192, [3, 3],
+                                         scope='conv4')
+        # 71 x 71 x 192.
+        end_points['pool2'] = slim.max_pool2d(end_points['conv4'], [3, 3],
+                                           stride=2, scope='pool2')
+        # 35 x 35 x 192.
+        net = end_points['pool2']
+      
+      # Inception blocks
+      with slim.arg_scope([slim.conv2d, slim.max_pool2d, slim.avg_pool2d],
+                            stride=1, padding='SAME'):
+        # mixed: 35 x 35 x 256.
+        with tf.variable_scope('mixed_35x35x256a'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 64, [1, 1])
+          with tf.variable_scope('branch5x5'):
+            branch5x5 = slim.conv2d(net, 48, [1, 1])
+            branch5x5 = slim.conv2d(branch5x5, 64, [5, 5])
+          with tf.variable_scope('branch3x3dbl'):
+            branch3x3dbl = slim.conv2d(net, 64, [1, 1])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 96, [3, 3])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 96, [3, 3])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 32, [1, 1])
+          net = tf.concat(3, [branch1x1, branch5x5, branch3x3dbl, branch_pool])
+          end_points['mixed_35x35x256a'] = net
+        # mixed_1: 35 x 35 x 288.
+        with tf.variable_scope('mixed_35x35x288a'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 64, [1, 1])
+          with tf.variable_scope('branch5x5'):
+            branch5x5 = slim.conv2d(net, 48, [1, 1])
+            branch5x5 = slim.conv2d(branch5x5, 64, [5, 5])
+          with tf.variable_scope('branch3x3dbl'):
+            branch3x3dbl = slim.conv2d(net, 64, [1, 1])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 96, [3, 3])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 96, [3, 3])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 64, [1, 1])
+          net = tf.concat(3, [branch1x1, branch5x5, branch3x3dbl, branch_pool])
+          end_points['mixed_35x35x288a'] = net
+        # mixed_2: 35 x 35 x 288.
+        with tf.variable_scope('mixed_35x35x288b'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 64, [1, 1])
+          with tf.variable_scope('branch5x5'):
+            branch5x5 = slim.conv2d(net, 48, [1, 1])
+            branch5x5 = slim.conv2d(branch5x5, 64, [5, 5])
+          with tf.variable_scope('branch3x3dbl'):
+            branch3x3dbl = slim.conv2d(net, 64, [1, 1])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 96, [3, 3])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 96, [3, 3])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 64, [1, 1])
+          net = tf.concat(3, [branch1x1, branch5x5, branch3x3dbl, branch_pool])
+          end_points['mixed_35x35x288b'] = net
+        # mixed_3: 17 x 17 x 768.
+        with tf.variable_scope('mixed_17x17x768a'):
+          with tf.variable_scope('branch3x3'):
+            branch3x3 = slim.conv2d(net, 384, [3, 3], stride=2, padding='VALID')
+          with tf.variable_scope('branch3x3dbl'):
+            branch3x3dbl = slim.conv2d(net, 64, [1, 1])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 96, [3, 3])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 96, [3, 3],
+                                      stride=2, padding='VALID')
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.max_pool2d(net, [3, 3], stride=2, padding='VALID')
+          net = tf.concat(3, [branch3x3, branch3x3dbl, branch_pool])
+          end_points['mixed_17x17x768a'] = net
+        # mixed4: 17 x 17 x 768.
+        with tf.variable_scope('mixed_17x17x768b'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 192, [1, 1])
+          with tf.variable_scope('branch7x7'):
+            branch7x7 = slim.conv2d(net, 128, [1, 1])
+            branch7x7 = slim.conv2d(branch7x7, 128, [1, 7])
+            branch7x7 = slim.conv2d(branch7x7, 192, [7, 1])
+          with tf.variable_scope('branch7x7dbl'):
+            branch7x7dbl = slim.conv2d(net, 128, [1, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 128, [7, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 128, [1, 7])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 128, [7, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 192, [1, 7])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 192, [1, 1])
+          net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
+          end_points['mixed_17x17x768b'] = net
+        # mixed_5: 17 x 17 x 768.
+        with tf.variable_scope('mixed_17x17x768c'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 192, [1, 1])
+          with tf.variable_scope('branch7x7'):
+            branch7x7 = slim.conv2d(net, 160, [1, 1])
+            branch7x7 = slim.conv2d(branch7x7, 160, [1, 7])
+            branch7x7 = slim.conv2d(branch7x7, 192, [7, 1])
+          with tf.variable_scope('branch7x7dbl'):
+            branch7x7dbl = slim.conv2d(net, 160, [1, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 160, [7, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 160, [1, 7])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 160, [7, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 192, [1, 7])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 192, [1, 1])
+          net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
+          end_points['mixed_17x17x768c'] = net
+        # mixed_6: 17 x 17 x 768.
+        with tf.variable_scope('mixed_17x17x768d'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 192, [1, 1])
+          with tf.variable_scope('branch7x7'):
+            branch7x7 = slim.conv2d(net, 160, [1, 1])
+            branch7x7 = slim.conv2d(branch7x7, 160, [1, 7])
+            branch7x7 = slim.conv2d(branch7x7, 192, [7, 1])
+          with tf.variable_scope('branch7x7dbl'):
+            branch7x7dbl = slim.conv2d(net, 160, [1, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 160, [7, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 160, [1, 7])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 160, [7, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 192, [1, 7])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 192, [1, 1])
+          net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
+          end_points['mixed_17x17x768d'] = net
+        # mixed_7: 17 x 17 x 768.
+        with tf.variable_scope('mixed_17x17x768e'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 192, [1, 1])
+          with tf.variable_scope('branch7x7'):
+            branch7x7 = slim.conv2d(net, 192, [1, 1])
+            branch7x7 = slim.conv2d(branch7x7, 192, [1, 7])
+            branch7x7 = slim.conv2d(branch7x7, 192, [7, 1])
+          with tf.variable_scope('branch7x7dbl'):
+            branch7x7dbl = slim.conv2d(net, 192, [1, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 192, [7, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 192, [1, 7])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 192, [7, 1])
+            branch7x7dbl = slim.conv2d(branch7x7dbl, 192, [1, 7])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 192, [1, 1])
+          net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
+          end_points['mixed_17x17x768e'] = net
+        
+        # Auxiliary Head logits
+        aux_logits = tf.identity(end_points['mixed_17x17x768e'])
+        with tf.variable_scope('aux_logits'):
+          aux_logits = slim.avg_pool2d(aux_logits, [5, 5], stride=3,
+                                    padding='VALID')
+          aux_logits = slim.conv2d(aux_logits, 128, [1, 1], scope='proj')
+          # Shape of feature map before the final layer.
+          shape = aux_logits.get_shape()
+          aux_logits = slim.conv2d(aux_logits, 768, shape[1:3],
+                                  padding='VALID')
+          aux_logits = slim.flatten(aux_logits)
+          aux_logits = slim.fully_connected(aux_logits, num_classes, activation_fn=None)
+          end_points['aux_logits'] = aux_logits
+        # mixed_8: 8 x 8 x 1280.
+        # Note that the scope below is not changed to not void previous
+        # checkpoints.
+        # (TODO) Fix the scope when appropriate.
+        with tf.variable_scope('mixed_17x17x1280a'):
+          with tf.variable_scope('branch3x3'):
+            branch3x3 = slim.conv2d(net, 192, [1, 1])
+            branch3x3 = slim.conv2d(branch3x3, 320, [3, 3], stride=2,
+                                   padding='VALID')
+          with tf.variable_scope('branch7x7x3'):
+            branch7x7x3 = slim.conv2d(net, 192, [1, 1])
+            branch7x7x3 = slim.conv2d(branch7x7x3, 192, [1, 7])
+            branch7x7x3 = slim.conv2d(branch7x7x3, 192, [7, 1])
+            branch7x7x3 = slim.conv2d(branch7x7x3, 192, [3, 3],
+                                     stride=2, padding='VALID')
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.max_pool2d(net, [3, 3], stride=2, padding='VALID')
+          net = tf.concat(3, [branch3x3, branch7x7x3, branch_pool])
+          end_points['mixed_17x17x1280a'] = net
+        # mixed_9: 8 x 8 x 2048.
+        with tf.variable_scope('mixed_8x8x2048a'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 320, [1, 1])
+          with tf.variable_scope('branch3x3'):
+            branch3x3 = slim.conv2d(net, 384, [1, 1])
+            branch3x3 = tf.concat(3, [slim.conv2d(branch3x3, 384, [1, 3]),
+                                      slim.conv2d(branch3x3, 384, [3, 1])])
+          with tf.variable_scope('branch3x3dbl'):
+            branch3x3dbl = slim.conv2d(net, 448, [1, 1])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 384, [3, 3])
+            branch3x3dbl = tf.concat(3, [slim.conv2d(branch3x3dbl, 384, [1, 3]),
+                                         slim.conv2d(branch3x3dbl, 384, [3, 1])])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 192, [1, 1])
+          net = tf.concat(3, [branch1x1, branch3x3, branch3x3dbl, branch_pool])
+          end_points['mixed_8x8x2048a'] = net
+        # mixed_10: 8 x 8 x 2048.
+        with tf.variable_scope('mixed_8x8x2048b'):
+          with tf.variable_scope('branch1x1'):
+            branch1x1 = slim.conv2d(net, 320, [1, 1])
+          with tf.variable_scope('branch3x3'):
+            branch3x3 = slim.conv2d(net, 384, [1, 1])
+            branch3x3 = tf.concat(3, [slim.conv2d(branch3x3, 384, [1, 3]),
+                                      slim.conv2d(branch3x3, 384, [3, 1])])
+          with tf.variable_scope('branch3x3dbl'):
+            branch3x3dbl = slim.conv2d(net, 448, [1, 1])
+            branch3x3dbl = slim.conv2d(branch3x3dbl, 384, [3, 3])
+            branch3x3dbl = tf.concat(3, [slim.conv2d(branch3x3dbl, 384, [1, 3]),
+                                         slim.conv2d(branch3x3dbl, 384, [3, 1])])
+          with tf.variable_scope('branch_pool'):
+            branch_pool = slim.avg_pool2d(net, [3, 3])
+            branch_pool = slim.conv2d(branch_pool, 192, [1, 1])
+          net = tf.concat(3, [branch1x1, branch3x3, branch3x3dbl, branch_pool])
+          end_points['mixed_8x8x2048b'] = net
+        # Final pooling and prediction
+        with tf.variable_scope('logits'):
+          shape = net.get_shape()
+          net = slim.avg_pool2d(net, shape[1:3], padding='VALID', scope='pool')
+          # 1 x 1 x 2048
+          net = slim.dropout(net, dropout_keep_prob, scope='dropout')
+          net = slim.flatten(net, scope='flatten')
+          # 2048
+          logits = slim.fully_connected(net, num_classes, activation_fn=None, scope='logits')
+          # 1000
+          end_points['logits'] = logits
+          end_points['predictions'] = tf.nn.softmax(logits, name='predictions')
+      
+      return logits, end_points
+

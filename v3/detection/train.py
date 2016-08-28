@@ -1,9 +1,17 @@
 import os
 import tensorflow as tf
+import tensorflow.contrib.slim as slim
 import time
 
 import model
 from inputs.detection.construct import construct_network_input_nodes
+
+# Batch normalization. Constant governing the exponential moving average of
+# the 'global' mean and variance for all activations.
+BATCHNORM_MOVING_AVERAGE_DECAY = 0.9997
+
+# The decay to use for the moving average.
+MOVING_AVERAGE_DECAY = 0.9999
 
 def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
   
@@ -35,11 +43,31 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
       cfg=cfg
     )
     
-    features = model.build(graph, images, cfg)
-    
+    batch_norm_params = {
+      # Decay for the batch_norm moving averages.
+      'decay': BATCHNORM_MOVING_AVERAGE_DECAY,
+      # epsilon to prevent 0s in variance.
+      'epsilon': 0.001
+    }
+    # Set weight_decay for weights in Conv and FC layers.
+    with slim.arg_scope([slim.conv2d, slim.fully_connected], weights_regularizer=slim.l2_regularizer(0.00004)):
+      with slim.arg_scope([slim.conv2d],
+                          activation_fn=tf.nn.relu,
+                          normalizer_fn=slim.batch_norm,
+                          normalizer_params=batch_norm_params):
+        # Force all Variables to reside on the CPU.
+        with slim.arg_scope([slim.variable], device='/cpu:0'):
+          features = model.build(graph, images, cfg)
+
     if first_iteration: 
       # conv kernels, gamma and beta for batch normalization
-      original_inception_vars = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)]
+      def name_in_checkpoint(var):
+        if "fully_connected" in var.op.name:
+          return var.op.name.replace("fully_connected", "FC")
+        return var.op.name
+      variables_to_restore = slim.get_model_variables()
+      original_inception_vars = {name_in_checkpoint(var):var for var in variables_to_restore}
+      #original_inception_vars = [v for v in graph.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)]
 
     
     locations, confidences = model.add_detection_heads(
@@ -78,16 +106,27 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
       global_step = global_step
     )
     
+    
+    # Track the moving averages of all trainable variables.
+    # Note that we maintain a "double-average" of the BatchNormalization
+    # global statistics. This is more complicated then need be but we employ
+    # this for backward-compatibility with our previous models.
     ema = tf.train.ExponentialMovingAverage(
       decay=cfg.MOVING_AVERAGE_DECAY,
       num_updates=global_step
     )
-    maintain_averages_op = ema.apply(
-      tf.get_collection('conv_params') +
-      tf.get_collection('batchnorm_params') +
-      tf.get_collection('softmax_params') + 
-      tf.get_collection('batchnorm_mean_var')
-    )
+    
+    # Another possiblility is to use tf.slim.get_variables().
+    variables_to_average = (tf.trainable_variables() +
+                            tf.moving_average_variables())
+    maintain_averages_op = ema.apply(variables_to_average)
+    
+   #  maintain_averages_op = ema.apply(
+#       tf.get_collection('conv_params') +
+#       tf.get_collection('batchnorm_params') +
+#       tf.get_collection('softmax_params') + 
+#       tf.get_collection('batchnorm_mean_var')
+#     )
 
     # Create an op that will update the moving averages after each training
     # step.  This is what we will use in place of the usual training op.
@@ -137,7 +176,7 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
     # create the summary writer to write the event files
     summar_writer = tf.train.SummaryWriter(
       summary_logdir,
-      graph_def=graph.as_graph_def(),
+      graph=graph,
       max_queue=10,
       flush_secs=30
     )

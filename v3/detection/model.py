@@ -398,4 +398,12 @@ def add_loss(graph, locations, confidences, batched_bboxes, batched_num_bboxes, 
 
 def build(graph, inputs, cfg):
   
-  return v3_model.build(graph, inputs, cfg)
+  logits, endpoints = v3_model.build(
+     inputs = inputs,
+     dropout_keep_prob=0.8,
+     num_classes=1001,
+     is_training=cfg.USE_BATCH_STATISTICS,
+     scope=''
+  )
+  
+  return endpoints['mixed_8x8x2048b']
