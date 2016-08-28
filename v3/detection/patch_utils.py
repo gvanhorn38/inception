@@ -82,10 +82,35 @@ def convert_proposals(bboxes, offset, patch_dims, image_dims):
   
   return converted_bboxes
 
-# Malisiewicz et al.  
-# http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
+def intersection_over_union(bbox1, bbox2):
+   
+  bbox1_xmin, bbox1_ymin, bbox1_xmax, bbox1_ymax = bbox1
+  bbox2_xmin, bbox2_ymin, bbox2_xmax, bbox2_ymax = bbox2
+
+  x1 = max(bbox1_xmin, bbox2_xmin)
+  y1 = max(bbox1_ymin, bbox2_ymin)
+  x2 = min(bbox1_xmax, bbox2_xmax)
+  y2 = min(bbox1_ymax, bbox2_ymax)
+
+  w = max(0, x2 - x1)
+  h = max(0, y2 - y1)
+
+  intersection = w * h
+  bbox1_area = (bbox1_xmax - bbox1_xmin) * (bbox1_ymax - bbox1_ymin)
+  bbox2_area = (bbox2_xmax - bbox2_xmin) * (bbox2_ymax - bbox2_ymin)
+        
+  iou = intersection / (1.0 * bbox1_area + bbox2_area - intersection)
+
+  return iou
+
+# GVH: This could use a speed up  
 def non_max_suppression(bboxes, confs, jaccard_threshold=0.85):
   """Perform non-max suppression on the bboxes, and return the filtered bboxes and confs
+  
+  What do we want to do about the confidences? For boxes that get merged, should we take 
+  the most confident prediction? 
+  
+  Should we do filtering on the confidences first? 
   
   Args:
     bboxes (np.array) : [[x1, y1, x2, y2]] bounding boxes
@@ -98,55 +123,46 @@ def non_max_suppression(bboxes, confs, jaccard_threshold=0.85):
   """
   if len(bboxes) == 0:
     return bboxes, confs
-
-  # This list will contain the indices of the bboxes we will keep
-  pick = []
-
-  # grab the coordinates of the bounding boxes
-  x1 = bboxes[:,0]
-  y1 = bboxes[:,1]
-  x2 = bboxes[:,2]
-  y2 = bboxes[:,3]
-
-  # compute the area of the bounding boxes and sort the bounding
-  # boxes by the bottom-right y-coordinate of the bounding box
-  # This means that we will keep the bounding box with the largest bottom-right y coord!
-  area = (x2 - x1 + 1) * (y2 - y1 + 1)
-  idxs = np.argsort(y2)
-
-  # keep looping while some indexes still remain in the indexes
-  # list
+    
+  
+  # We need an order to process the bounding boxes, we'll choose the lower y point
+  idxs = np.argsort(bboxes[:,3]).tolist()
+  
+  # These are the indices of the bounding boxes that we have chosen
+  selected_indices = []
+  
   while len(idxs) > 0:
-    # grab the last index in the indexes list and add the
-    # index value to the list of picked indexes
+    
     last = len(idxs) - 1
     i = idxs[last]
-    pick.append(i)
-
-    # find the largest (x, y) coordinates for the start of
-    # the bounding box and the smallest (x, y) coordinates
-    # for the end of the bounding box
-    xx1 = np.maximum(x1[i], x1[idxs[:last]])
-    yy1 = np.maximum(y1[i], y1[idxs[:last]])
-    xx2 = np.minimum(x2[i], x2[idxs[:last]])
-    yy2 = np.minimum(y2[i], y2[idxs[:last]])
-
-    # compute the width and height of the bounding box
-    w = np.maximum(0, xx2 - xx1 + 1)
-    h = np.maximum(0, yy2 - yy1 + 1)
-
-    # compute the ratio of overlap
-    overlap = (w * h) / area[idxs[:last]]
-
-    # delete all indexes from the index list that have
-    idxs = np.delete(idxs, np.concatenate(([last],
-      np.where(overlap > jaccard_threshold)[0])))
-
-  # return only the bounding boxes that were picked
-  return bboxes[pick], confs[pick]
+    
+    current_bbox = bboxes[i]
+    indices_to_merge = [i]
+    
+    for pos in xrange(0, last):
   
-  
+      j = idxs[pos]
+      test_bbox = bboxes[j]
+      
+      iou = intersection_over_union(current_bbox, test_bbox)
 
+      if iou > jaccard_threshold:
+        indices_to_merge.append(j)
+    
+    if len(indices_to_merge) == 1:
+      selected_indices.append(indices_to_merge[0])
+    else:
+      # We have multiple bounding boxes, and we only want to keep one of them.
+      # We want to keep the box with the largest confidence
+      conf_indx = np.argmax(confs[indices_to_merge])
+      indx_to_keep = indices_to_merge[conf_indx]
+      selected_indices.append(indx_to_keep)
+    
+    for idx in indices_to_merge:  
+      idxs.remove(idx)
+  
+  return bboxes[selected_indices], confs[selected_indices]
+  
 def test():
   
   image_dims = (600, 800)

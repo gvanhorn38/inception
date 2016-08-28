@@ -2,6 +2,9 @@
 Take multiple crops from an image and combine the results, in an attempt to boost mAP.
 """
 
+from matplotlib import pyplot as plt
+from scipy.misc import imresize
+
 import json
 import numpy as np
 import os
@@ -11,6 +14,8 @@ import time
 
 import model
 import patch_utils
+
+DEBUG = False
 
 def single_image_input(tfrecords, cfg):
   
@@ -130,6 +135,9 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
     
     detection_results = []
     
+    if DEBUG:
+      plt.ion()
+    
     try:
 
       if specific_model_path == None:
@@ -156,6 +164,10 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
       step = 0
       while not coord.should_stop():
         
+        if DEBUG:
+          if step == 5:
+            break
+        
         start_time = time.time()
         
         image, image_id = sess.run([single_image, single_image_id])
@@ -167,8 +179,15 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
           feed_image_height : image_dims[0],
           feed_image_width : image_dims[1]
         })
-        all_bboxes = outputs[0][0] + bbox_priors
-        all_confs = outputs[1][0].ravel()
+        
+        bboxes = outputs[0][0] + bbox_priors
+        confs = outputs[1][0]
+        
+        # Restrict to the max number of detections
+        sorted_idxs = np.argsort(confs.ravel())[::-1]
+        sorted_idxs = sorted_idxs[:max_detections]
+        all_bboxes = bboxes[sorted_idxs]
+        all_confs = confs[sorted_idxs].ravel()
         
         # We could try to do some batching here....
         # Now process the crops
@@ -182,18 +201,22 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
             })
             
             # Get the predictions, don't forget that there is a batch size of 1
-            predicted_bboxes = outputs[0][0]
+            predicted_bboxes = outputs[0][0] + bbox_priors
             predicted_confs = outputs[1][0]
             
-            # Account for the priors
-            predicted_bboxes += bbox_priors
-            
             # Keep only the predictions that are completely contained in the [0.1, 0.1, 0.9, 0.9] square
+            # for this patch
             filtered_bboxes, filtered_confs = patch_utils.filter_proposals(predicted_bboxes, predicted_confs) 
             
             # No valid predictions? 
             if filtered_bboxes.shape[0] == 0:
               continue
+            
+            # Lets get rid of some of the predictions
+            sorted_idxs = np.argsort(filtered_confs.ravel())[::-1]
+            sorted_idxs = sorted_idxs[:max_detections]
+            filtered_bboxes = filtered_bboxes[sorted_idxs]
+            filtered_confs = filtered_confs[sorted_idxs]
             
             # Convert the bounding boxes to the original image dimensions
             converted_bboxes = patch_utils.convert_proposals(
@@ -207,16 +230,11 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
             all_bboxes = np.vstack([all_bboxes, converted_bboxes])
             all_confs = np.hstack([all_confs, filtered_confs.ravel()])
         
-        # Lets do non-maximum suppression for the final predictions
-        locs, confs = patch_utils.non_max_suppression(all_bboxes, all_confs, jaccard_threshold=0.85)          
+        # Lets make sure the coordinates are in the proper order
+        # Its interesting that we don't enforce this anywhere in the model
+        proper_bboxes = []
+        for loc in all_bboxes:
         
-        # Now process the predictions
-        indices = np.argsort(confs.ravel())[::-1]
-        
-        for index in indices[0:max_detections]:
-          loc = locs[index].ravel()
-          conf = confs[index]          
-          
           pred_xmin, pred_ymin, pred_xmax, pred_ymax = loc
           
           # Not sure what we want to do here. Its interesting that we don't enforce this anywhere in the model
@@ -228,7 +246,59 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
             t = pred_ymax
             pred_ymax = pred_ymin
             pred_ymin = t
-            
+          
+          proper_bboxes.append([pred_xmin, pred_ymin, pred_xmax, pred_ymax])
+        all_bboxes = np.array(proper_bboxes)
+        
+        if DEBUG:
+          plt.figure('all detections')
+          plt.clf()  
+          plt.imshow(imresize(image, [299, 299]))
+          r = ""
+          b = 0
+          while r == "":
+            xmin, ymin, xmax, ymax = all_bboxes[b] * np.array([299, 299, 299, 299])
+            print "BBox: [%0.3f, %0.3f, %0.3f, %0.3f]" % (xmin, ymin, xmax, ymax)
+            print "Conf: ", all_confs[b]
+            plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'b-')
+            plt.show()
+            b+= 1
+            r = raw_input("push button")
+        
+          print "Number of total bboxes: %d" % (all_bboxes.shape[0], )
+          
+        # Lets do non-maximum suppression for the final predictions
+        locs, confs = patch_utils.non_max_suppression(all_bboxes, all_confs, jaccard_threshold=0.85)          
+        
+        # Now process the predictions
+        indices = np.argsort(confs.ravel())[::-1]
+        
+        if DEBUG:
+          print "Number of nms bboxes: %d" % (locs.shape[0], )
+          print "Removed %d detections" % (all_bboxes.shape[0] - locs.shape[0],) 
+        
+          print "Sorted confidences: %s" % (confs[indices][:10],)
+        
+          plt.figure('top detections')
+          plt.clf()
+          plt.imshow(imresize(image, [299, 299]))
+          r = ""
+          b = 0
+          while r == "":
+            xmin, ymin, xmax, ymax = locs[indices[b]] * np.array([299, 299, 299, 299])
+            print "BBox: [%0.3f, %0.3f, %0.3f, %0.3f]" % (xmin, ymin, xmax, ymax)
+            print "Conf: ", confs[indices[b]]
+            plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'b-')
+            plt.show()
+            b+= 1
+            r = raw_input("push button")
+ 
+        for index in indices[0:max_detections]:
+          loc = locs[index].ravel()
+          conf = confs[index]          
+          
+          pred_xmin, pred_ymin, pred_xmax, pred_ymax = loc
+          
           detection_results.append({
             "image_id" : int(image_id), # converts  from np.array
             "bbox" : [pred_xmin, pred_ymin, pred_xmax, pred_ymax],
