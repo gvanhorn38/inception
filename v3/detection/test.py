@@ -83,6 +83,7 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
     coord = tf.train.Coordinator()
     
     tf.initialize_all_variables().run()
+    tf.initialize_local_variables().run() # This is needed for the filename_queue
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     
     detection_results = []
