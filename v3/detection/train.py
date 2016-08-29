@@ -47,7 +47,8 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
       # Decay for the batch_norm moving averages.
       'decay': BATCHNORM_MOVING_AVERAGE_DECAY,
       # epsilon to prevent 0s in variance.
-      'epsilon': 0.001
+      'epsilon': 0.001,
+      'variables_collections' : tf.GraphKeys.MOVING_AVERAGE_VARIABLES
     }
     # Set weight_decay for weights in Conv and FC layers.
     with slim.arg_scope([slim.conv2d, slim.fully_connected], weights_regularizer=slim.l2_regularizer(0.00004)):
@@ -127,11 +128,19 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
 #       tf.get_collection('softmax_params') + 
 #       tf.get_collection('batchnorm_mean_var')
 #     )
-
+    
+    
+    batchnorm_updates = graph.get_collection(tf.GraphKeys.UPDATE_OPS)
+    
     # Create an op that will update the moving averages after each training
     # step.  This is what we will use in place of the usual training op.
-    with tf.control_dependencies([optimize_op]):
-      training_op = tf.group(maintain_averages_op)
+    #with tf.control_dependencies([optimize_op]):
+    #  training_op = tf.group(maintain_averages_op)
+    
+    # Group all updates to into a single train op.
+    batchnorm_updates_op = tf.group(*batchnorm_updates)
+    training_op = tf.group(optimize_op, maintain_averages_op,
+                        batchnorm_updates_op)
     
     save_dir = os.path.join(logdir, 'checkpoints')
     if not os.path.exists(save_dir):
@@ -218,8 +227,9 @@ def train(tfrecords, bbox_priors, logdir, cfg, first_iteration=False):
 
         # increment the global step counter
         step = global_step.eval()
-
-        print print_str % (step, fetched[2], fetched[0], (dt / cfg.BATCH_SIZE) * 1000)  
+        
+        if (step % 10) == 0:
+          print print_str % (step, fetched[2], fetched[0], (dt / cfg.BATCH_SIZE) * 1000)  
          
         if (step % 50) == 0:
           print "writing summary"
