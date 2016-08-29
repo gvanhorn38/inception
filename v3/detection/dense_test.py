@@ -191,7 +191,14 @@ def test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, save_dir, 
         
         # We could try to do some batching here....
         # Now process the crops
-        for patch_dims, offset in [[(299, 299), (149, 149)], [(185, 185), (93, 93)]]:
+        
+        # Patch Dims, Stride Information
+        patch_info = [
+          [(299, 299), (149, 149)],
+          # [(185, 185), (93, 93)]
+        ]
+        
+        for patch_dims, offset in patch_info:
           patches, patch_offsets = patch_utils.extract_patches(image, patch_dims, offset)
           for patch, patch_offset in zip(patches, patch_offsets):
             outputs = sess.run([locations, confidences], {
