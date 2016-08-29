@@ -389,8 +389,14 @@ def add_loss(graph, locations, confidences, batched_bboxes, batched_num_bboxes, 
     ###loss = loss - (1. / tf.cast(tf.reduce_sum(batched_num_bboxes), tf.float32) ) *  tf.reduce_sum(tf.log( 1. - confidences))
     #loss = loss -  tf.reduce_sum(tf.log( (1. - confidences) + small_epsilon))
     
-    location_loss = cfg.LOCATION_LOSS_ALPHA * tf.nn.l2_loss(matched_locations - stacked_gt_bboxes)
-    confidence_loss = -1. * tf.reduce_sum(tf.log(matched_confidences)) - tf.reduce_sum(tf.log((1. - unmatched_confidences) + small_epsilon))
+    
+    #location_loss = cfg.LOCATION_LOSS_ALPHA * tf.nn.l2_loss(matched_locations - stacked_gt_bboxes)
+    #confidence_loss = -1. * tf.reduce_sum(tf.log(matched_confidences)) - tf.reduce_sum(tf.log((1. - unmatched_confidences) + small_epsilon))
+    
+    # It could be the case that there are no ground truth bounding boxes
+    num_gt_bboxes = tf.reduce_sum(batched_num_bboxes)
+    location_loss = tf.cond(num_gt_bboxes > 0, lambda: cfg.LOCATION_LOSS_ALPHA * tf.nn.l2_loss(matched_locations - stacked_gt_bboxes), lambda: tf.zeros(shape=[]))
+    confidence_loss = tf.cond(num_gt_bboxes > 0, lambda: -1. * tf.reduce_sum(tf.log(matched_confidences)) - tf.reduce_sum(tf.log((1. - unmatched_confidences) + small_epsilon)), lambda : -1. * tf.reduce_sum(tf.log((1. - unmatched_confidences) + small_epsilon)))
     
     #loss = -1. * tf.reduce_sum(tf.log(matched_confidences)) - tf.reduce_sum(tf.log((1. - unmatched_confidences) + small_epsilon)) + cfg.LOCATION_LOSS_ALPHA * tf.nn.l2_loss(matched_locations - stacked_gt_bboxes)
   
