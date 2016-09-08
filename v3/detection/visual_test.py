@@ -131,6 +131,10 @@ def visual_test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg
             xmin, ymin, xmax, ymax = (prior + loc) * cfg.INPUT_SIZE
             plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'r-')
             
+            # Draw the prior box that was chosen
+            xmin, ymin, xmax, ymax = prior * cfg.INPUT_SIZE
+            plt.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], 'g-')
+            
             print "Pred Confidence for box %d: %f" % (i, conf)
             
           plt.show()
@@ -139,7 +143,8 @@ def visual_test(tfrecords, bbox_priors, checkpoint_dir, specific_model_path, cfg
           t = raw_input("push button")
           if t != '':
             done = True
-          
+            break
+            
           plt.clf()
           
 
