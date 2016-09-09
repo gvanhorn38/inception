@@ -205,6 +205,8 @@ def _process_image_files_batch(coder, thread_index, ranges, name, output_directo
         counter += 1
       except Exception as e:
         error_counter += 1
+        image_example['tf_error'] = str(e) + e.message
+        print "FILE ERROR %s %s" % (filename, str(e) + e.message)
         error_queue.put(image_example)
 
       if not counter % 1000:
@@ -298,7 +300,6 @@ def create(dataset, dataset_name, output_directory, num_shards, num_threads, shu
   errors = []
   while not error_queue.empty():
     errors.append(error_queue.get())
-  print ('%d examples failed.' % (len(errors),))
   
   return errors
   
