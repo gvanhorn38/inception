@@ -149,7 +149,7 @@ def input_nodes(
     # Place the images on another queue that will be sampled by the model
     if shuffle_batch:
       images, sparse_labels, image_ids = tf.train.shuffle_batch(
-        [image, label, path, image_id],
+        [image, label, image_id],
         batch_size=batch_size,
         num_threads=num_threads,
         capacity= capacity, #batch_size * (num_threads + 2),
