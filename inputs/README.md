@@ -94,12 +94,12 @@ $ ls images | parallel './check.sh' images/{}
 Once the problem images have been removed or fixed, we can convert the images to the jpeg format:
 
 ```
-$ ls images | grep \.jpg | parallel -j 10 "mogrify -format jpg images/{}"
+$ ls images | grep \.jpg | parallel -j 6 "mogrify -format jpg images/{}"
 ```
 
 Perhaps we also want to resize them:
 ```
-$ ls images | parallel -j 4 "mogrify -resize 800x800 -format jpg ebird/{}"
+$ ls images | parallel -j 6 "mogrify -resize 800x800 -format jpg images/{}"
 ```
 
 Once you have your dataset preprocessed, you can use a method in [inputs.create_tfrecords.py](create_tfrecords.py) to create the tfrecords files. For example, within a python script or terminal:
