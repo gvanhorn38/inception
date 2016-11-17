@@ -71,8 +71,8 @@ def augment(image, cfg):
     else:
       image = tf.image.resize_images(
         image,
-        cfg.INPUT_SIZE,
-        cfg.INPUT_SIZE
+        (cfg.INPUT_SIZE,
+        cfg.INPUT_SIZE)
       )
   
   if options.BRIGHTNESS:
