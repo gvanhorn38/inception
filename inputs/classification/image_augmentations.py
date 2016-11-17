@@ -53,8 +53,8 @@ def augment(image, cfg):
       # Just resize it
       image = tf.image.resize_images(
         image,
-        target_size,
-        target_size
+        (target_size,
+        target_size)
       )
     
     image = tf.random_crop(image, [cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
