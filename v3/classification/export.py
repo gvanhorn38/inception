@@ -19,6 +19,7 @@ import os
 import pprint
 import tensorflow as tf
 from tensorflow.contrib.session_bundle import exporter
+from tensorflow.python.framework import graph_util
 
 from config import parse_config_file
 from network_utils import add_logits
@@ -86,7 +87,7 @@ def export(model_path, export_path, export_version, export_for_serving, cfg):
   
   with tf.Session(graph=graph, config=sess_config) as sess:
     
-    tf.initialize_all_variables().run()
+    tf.global_variables_initializer()
     
     saver.restore(sess, model_path)
 
@@ -100,7 +101,7 @@ def export(model_path, export_path, export_version, export_for_serving, cfg):
       model_exporter.export(export_path, tf.constant(export_version), sess)
     
     else:
-      v2c = tf.python.client.graph_util.convert_variables_to_constants
+      v2c = graph_util.convert_variables_to_constants
       deploy_graph_def = v2c(sess, graph.as_graph_def(), [logits.name[:-2]])
     
       if not os.path.exists(export_path):
