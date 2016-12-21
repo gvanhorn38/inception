@@ -76,7 +76,7 @@ def input_nodes(
         image.set_shape([cfg.INPUT_SIZE, cfg.INPUT_SIZE, 3])
 
       else:
-        image = tf.image.resize_images(image, cfg.INPUT_SIZE, cfg.INPUT_SIZE)
+        image = tf.image.resize_images(image, (cfg.INPUT_SIZE, cfg.INPUT_SIZE))
 
     if add_summaries:
       tf.image_summary('train_image', tf.expand_dims(image, 0))
