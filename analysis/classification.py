@@ -79,6 +79,7 @@ def process(classification_tfrecords, num_classes, output_dir, class_names=None,
   with tf.Session() as sess:
     
     tf.initialize_all_variables().run()
+    tf.initialize_local_variables().run()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
     
     try:
@@ -141,8 +142,10 @@ def process(classification_tfrecords, num_classes, output_dir, class_names=None,
     if denom == 0:
       print class_id
       print stats
-      
-    f1 = num  / denom
+      f1 = 0
+    
+    else:
+      f1 = num  / denom
     
     # process the mistakes for this category. We want to be able to render the images. 
     mistake_images = []
